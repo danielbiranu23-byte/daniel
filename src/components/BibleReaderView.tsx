@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import bibleBannerImg from '../assets/images/sanctuary_scripture_banner_1794836323517.jpg';
-import { authHeaders, safeJson } from '../lib/api';
+import { authHeaders, extractErrorMessage, safeJson } from '../lib/api';
 import {
   auth,
   deleteHighlightFromFirestore,
@@ -440,7 +440,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
         setSearchHits(searchOfflineBibleBundle(bundle, trimmed, testament));
         setError('');
       } else {
-        setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+        setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
       }
     } finally {
       setSearching(false);
@@ -514,7 +514,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+      setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
     } finally {
       setDownloading(false);
     }

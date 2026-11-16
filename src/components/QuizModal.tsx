@@ -1,6 +1,6 @@
 import { AlertCircle, BookCheck, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { authHeaders, safeJson } from '../lib/api';
+import { authHeaders, extractErrorMessage, safeJson } from '../lib/api';
 import type { QuizQuestion, StudyDocument } from '../types';
 
 interface QuizModalProps {
@@ -35,14 +35,14 @@ export function QuizModal({ doc, onClose, onQuizCompleted }: QuizModalProps) {
         });
         const data = await safeJson<{ error?: string; questions?: QuizQuestion[] }>(res);
         if (!res.ok) {
-          throw new Error(data.error || 'Qormaata qopheessuun hin danda’amne.');
+          throw new Error(extractErrorMessage(data.error, 'Qormaata qopheessuun hin danda’amne.'));
         }
         if (!cancelled) {
           setQuestions(data.questions || []);
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+          setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
         }
       } finally {
         if (!cancelled) {

@@ -1,7 +1,7 @@
 import { AlertCircle, BookOpen, CheckCircle2, KeyRound, Loader2, ShieldCheck, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import authHeroImg from '../assets/images/bible_god_light_1794765010352.jpg';
-import { safeJson, setAuthToken } from '../lib/api';
+import { extractErrorMessage, safeJson, setAuthToken } from '../lib/api';
 import {
   ensureFirebaseProfile,
   signInWithGooglePopup,
@@ -69,7 +69,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
 
       if (data && !res.ok) {
         await signOutFirebase();
-        throw new Error(data.error || 'Google waliin seenuun hin danda’amne.');
+        throw new Error(extractErrorMessage(data.error, 'Google waliin seenuun hin danda’amne.'));
       }
 
       if (res.ok && data?.token && data?.user) {
@@ -92,7 +92,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         setError('Foddaan seenumsa Google cufameera. Irra deebi’ii yaali.');
       } else {
-        setError(err instanceof Error ? err.message : 'Google waliin seenuun hin milkoofne.');
+        setError(extractErrorMessage(err, 'Google waliin seenuun hin milkoofne.'));
       }
     } finally {
       setGoogleLoading(false);
@@ -139,14 +139,14 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         });
         const data = await safeJson<{ error?: string; message?: string }>(res);
         if (!res.ok) {
-          throw new Error(data.error || 'Password haaromsuun hin danda’amne.');
+          throw new Error(extractErrorMessage(data.error, 'Password haaromsuun hin danda’amne.'));
         }
         setSuccessMsg(data.message || 'Password milkaa’inaan haaromfameera.');
         setMode('login');
         setPassword('');
         setConfirmPassword('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+        setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
       } finally {
         setLoading(false);
       }
@@ -163,12 +163,12 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         });
         const data = await safeJson<{ error?: string; token?: string; user?: AuthUser }>(res);
         if (!res.ok || !data.token || !data.user) {
-          throw new Error(data.error || 'Galmaa’uun hin danda’amne.');
+          throw new Error(extractErrorMessage(data.error, 'Galmaa’uun hin danda’amne.'));
         }
         setAuthToken(data.token);
         onAuthenticated(data.user, 'user');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+        setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
       } finally {
         setLoading(false);
       }
@@ -193,12 +193,12 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
       });
       const data = await safeJson<{ error?: string; token?: string; user?: AuthUser }>(res);
       if (!res.ok || !data.token || !data.user) {
-        throw new Error(data.error || 'Seenuun hin danda’amne.');
+        throw new Error(extractErrorMessage(data.error, 'Seenuun hin danda’amne.'));
       }
       setAuthToken(data.token);
       onAuthenticated(data.user, roleTab);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Dogoggorri uumameera.');
+      setError(extractErrorMessage(err, 'Dogoggorri uumameera.'));
     } finally {
       setLoading(false);
     }

@@ -12,7 +12,7 @@ import { LibraryView } from './components/LibraryView';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { QuizModal } from './components/QuizModal';
 import { TopBar, type AppTab } from './components/TopBar';
-import { authHeaders, getAuthToken, safeJson, setAuthToken } from './lib/api';
+import { authHeaders, extractErrorMessage, getAuthToken, safeJson, setAuthToken } from './lib/api';
 import {
   auth,
   deleteChatThreadFromFirestore,
@@ -282,7 +282,7 @@ export default function App() {
       void syncBibleBundleInBackground();
     } catch (err) {
       setLoadError(
-        err instanceof Error ? err.message : 'Server waliin walqunnamuun hin danda’amne.'
+        extractErrorMessage(err, 'Server waliin walqunnamuun hin danda’amne.')
       );
     } finally {
       setLoadingData(false);

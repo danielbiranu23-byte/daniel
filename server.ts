@@ -142,10 +142,14 @@ const OROMO_BIBLE_PATH = path.join(BIBLE_DIR, 'gaz_bib.json');
 const ENGLISH_BIBLE_PATH = path.join(BIBLE_DIR, 'eng_webp.json');
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-if (!IS_VERCEL) {
-  fs.mkdirSync(BIBLE_DIR, { recursive: true });
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!IS_VERCEL) {
+    fs.mkdirSync(BIBLE_DIR, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn('Directory initialization warning:', dirErr instanceof Error ? dirErr.message : dirErr);
 }
 
 let cachedBibleDatasets: { om: BibleDataset | null; en: BibleDataset | null } | null = null;
@@ -1163,14 +1167,32 @@ function saveStore(store: StoreData): void {
   queueMongoSync(store);
 }
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+let cachedAiClient: GoogleGenAI | null | undefined;
+
+function getAiClient(): GoogleGenAI | null {
+  if (cachedAiClient !== undefined) {
+    return cachedAiClient;
+  }
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
+    cachedAiClient = null;
+    return null;
+  }
+  try {
+    cachedAiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  } catch (err) {
+    console.error('GoogleGenAI init warning (using offline engine):', err);
+    cachedAiClient = null;
+  }
+  return cachedAiClient;
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -2664,7 +2686,8 @@ export async function createApp(): Promise<express.Express> {
       ];
     };
 
-    if (!process.env.GEMINI_API_KEY) {
+    const ai = getAiClient();
+    if (!ai) {
       res.json({ questions: buildOfflineQuizQuestions() });
       return;
     }
@@ -2823,7 +2846,8 @@ export async function createApp(): Promise<express.Express> {
     const sourceNames = targetDocs.map((d) => d.title);
     res.write(`data: ${JSON.stringify({ type: 'meta', threadId: thread.id, sources: sourceNames })}\n\n`);
 
-    if (!process.env.GEMINI_API_KEY) {
+    const ai = getAiClient();
+    if (!ai) {
       const offlineReply = buildOfflineChatbotReply(
         message.trim(),
         targetDocs,

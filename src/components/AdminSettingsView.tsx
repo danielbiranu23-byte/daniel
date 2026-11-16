@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { authHeaders, safeJson } from '../lib/api';
+import { authHeaders, extractErrorMessage, safeJson } from '../lib/api';
 import {
   auth,
   deleteStudyDocFromFirestore,
@@ -100,7 +100,7 @@ export function AdminSettingsView({
       ]);
       if (!docsRes.ok) {
         const err = await safeJson<{ error?: string }>(docsRes).catch(() => ({ error: undefined }));
-        throw new Error(err.error || 'Odeeffannoo Admin fiduun hin danda’amne.');
+        throw new Error(extractErrorMessage(err.error, 'Odeeffannoo Admin fiduun hin danda’amne.'));
       }
       const data = await safeJson<{
         documents?: StudyDocument[];
@@ -141,7 +141,7 @@ export function AdminSettingsView({
       .catch((err) => {
         setFeedback({
           type: 'error',
-          text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+          text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
         });
       })
       .finally(() => setLoading(false));
@@ -165,7 +165,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBibleBusy(null);
@@ -199,7 +199,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBibleBusy(null);
@@ -234,7 +234,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBibleBusy(null);
@@ -286,7 +286,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBusyAction(false);
@@ -331,7 +331,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBusyAction(false);
@@ -369,7 +369,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setUploadingInstructionFile(false);
@@ -396,7 +396,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     }
   };
@@ -417,7 +417,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     }
   };
@@ -445,7 +445,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBusyAction(false);
@@ -479,7 +479,7 @@ export function AdminSettingsView({
     } catch (err) {
       setFeedback({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Dogoggorri uumameera.',
+        text: extractErrorMessage(err, 'Dogoggorri uumameera.'),
       });
     } finally {
       setBusyAction(false);
