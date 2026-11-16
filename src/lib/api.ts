@@ -25,7 +25,7 @@ export async function safeJson<T = Record<string, any>>(res: Response): Promise<
     throw new Error(
       !res.ok
         ? 'Qunnamtiin serverii yeroof hin milkoofne. Maaloo sekondii muraasa booda irra deebi’ii yaali.'
-        : 'Deebiin serverii sirrii miti; maaloo irra deebi’ii yaali.'
+        : 'Serveriin API deebii JSON hin kennine. Maaloo page haaromsi (Refresh) ykn "Google Waliin Seeni" fayyadami.'
     );
   }
   try {

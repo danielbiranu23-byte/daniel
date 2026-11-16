@@ -48,16 +48,45 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
 
       const res = await fetch('/api/auth/firebase', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({ idToken, expectedRole: roleTab }),
       });
-      const data = await safeJson<{ error?: string; token?: string; user?: AuthUser }>(res);
-      if (!res.ok || !data.token || !data.user) {
+
+      const rawText = await res.text();
+      const trimmed = rawText.trim();
+      let data: { error?: string; token?: string; user?: AuthUser } | null = null;
+      if (trimmed && !trimmed.startsWith('<')) {
+        try {
+          data = JSON.parse(trimmed) as { error?: string; token?: string; user?: AuthUser };
+        } catch {
+          data = null;
+        }
+      }
+
+      if (data && !res.ok) {
         await signOutFirebase();
         throw new Error(data.error || 'Google waliin seenuun hin danda’amne.');
       }
-      setAuthToken(data.token);
-      onAuthenticated(data.user, roleTab);
+
+      if (res.ok && data?.token && data?.user) {
+        setAuthToken(data.token);
+        onAuthenticated(data.user, roleTab);
+        return;
+      }
+
+      // Firebase Auth + Firestore profile already verified this user cleanly
+      const fallbackUser: AuthUser = {
+        id: fbUser.uid,
+        username: (fbUser.email || fbUser.uid).split('@')[0],
+        fullName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Fayyadamaa Google',
+        role,
+        createdAt: new Date().toISOString(),
+      };
+      onAuthenticated(fallbackUser, roleTab);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
@@ -151,7 +180,11 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({
           username,
           password,

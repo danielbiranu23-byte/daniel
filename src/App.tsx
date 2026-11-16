@@ -174,6 +174,40 @@ export default function App() {
         progress: nextProgress,
       });
     } catch {
+      const fbUser = auth.currentUser;
+      if (fbUser && fbUser.emailVerified && (typeof navigator === 'undefined' || navigator.onLine)) {
+        try {
+          const isAdmin = userRef.current?.role === 'admin';
+          const [fsSettings, fsDocs, fsProgress] = await Promise.all([
+            fetchSettingsFromFirestore(),
+            fetchStudyDocsFromFirestore(isAdmin),
+            fetchProgressFromFirestore(fbUser.uid),
+          ]);
+          const fallbackSettings: PublicAdminSettings = fsSettings || {
+            tutorName: 'Barsiisaa Macaafaa AI',
+            welcomeGreeting:
+              'Akkam jirtu! Ani gargaaraa kee Barnoota Macaafa Qulqulluu ti.',
+            systemInstructions: '',
+            instructionFileName: '',
+            languageMode: 'om',
+            groundingMode: 'strict_files',
+          };
+          const activeDocs = fsDocs
+            .filter((d) => d.active)
+            .sort((a, b) => a.order - b.order);
+          setSettings(fallbackSettings);
+          setDocuments(activeDocs);
+          setProgress(fsProgress);
+          await cacheCurriculum({
+            settings: fallbackSettings,
+            documents: activeDocs,
+            progress: fsProgress,
+          });
+          return;
+        } catch {
+          // fall through to IndexedDB cache
+        }
+      }
       const cached = await getCachedCurriculum();
       if (cached) {
         setSettings(cached.settings);
@@ -224,6 +258,17 @@ export default function App() {
       setChats(nextChats);
       await cacheChats(nextChats);
     } catch {
+      const fbUser = auth.currentUser;
+      if (fbUser && fbUser.emailVerified && (typeof navigator === 'undefined' || navigator.onLine)) {
+        try {
+          const fsChats = await fetchChatThreadsFromFirestore(fbUser.uid);
+          setChats(fsChats);
+          await cacheChats(fsChats);
+          return;
+        } catch {
+          // fall through to IndexedDB cache
+        }
+      }
       const cachedChats = await getCachedChats();
       setChats(cachedChats);
     }

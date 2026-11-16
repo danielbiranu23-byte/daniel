@@ -19,6 +19,8 @@ import { authHeaders, safeJson } from '../lib/api';
 import {
   auth,
   deleteStudyDocFromFirestore,
+  fetchSettingsFromFirestore,
+  fetchStudyDocsFromFirestore,
   saveSettingsToFirestore,
   saveStudyDocToFirestore,
 } from '../lib/firebase';
@@ -91,34 +93,48 @@ export function AdminSettingsView({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadAdminData = useCallback(async () => {
-    const [docsRes, bibleRes] = await Promise.all([
-      fetch('/api/admin/documents', { headers: authHeaders() }),
-      fetch('/api/admin/bible/catalog', { headers: authHeaders() }),
-    ]);
-    if (!docsRes.ok) {
-      const err = await safeJson<{ error?: string }>(docsRes).catch(() => ({ error: undefined }));
-      throw new Error(err.error || 'Odeeffannoo Admin fiduun hin danda’amne.');
-    }
-    const data = await safeJson<{
-      documents?: StudyDocument[];
-      settings: PublicAdminSettings;
-      users?: AuthUser[];
-    }>(docsRes);
-    setDocuments(data.documents || []);
-    setSettings(data.settings);
-    setRegisteredUsers(data.users || []);
-    setDocOrder((data.documents?.length || 0) + 1);
+    try {
+      const [docsRes, bibleRes] = await Promise.all([
+        fetch('/api/admin/documents', { headers: authHeaders() }),
+        fetch('/api/admin/bible/catalog', { headers: authHeaders() }),
+      ]);
+      if (!docsRes.ok) {
+        const err = await safeJson<{ error?: string }>(docsRes).catch(() => ({ error: undefined }));
+        throw new Error(err.error || 'Odeeffannoo Admin fiduun hin danda’amne.');
+      }
+      const data = await safeJson<{
+        documents?: StudyDocument[];
+        settings: PublicAdminSettings;
+        users?: AuthUser[];
+      }>(docsRes);
+      setDocuments(data.documents || []);
+      setSettings(data.settings);
+      setRegisteredUsers(data.users || []);
+      setDocOrder((data.documents?.length || 0) + 1);
 
-    if (bibleRes.ok) {
-      const bData = await safeJson<{
-        books?: BibleBookCatalogItem[];
-        installedOm?: boolean;
-        installedEn?: boolean;
-      }>(bibleRes);
-      setBibleBooks(bData.books || []);
-      setBibleReady(Boolean(bData.installedOm && bData.installedEn));
+      if (bibleRes.ok) {
+        const bData = await safeJson<{
+          books?: BibleBookCatalogItem[];
+          installedOm?: boolean;
+          installedEn?: boolean;
+        }>(bibleRes);
+        setBibleBooks(bData.books || []);
+        setBibleReady(Boolean(bData.installedOm && bData.installedEn));
+      }
+    } catch (err) {
+      if (auth.currentUser?.emailVerified && currentUser.role === 'admin') {
+        const [fsDocs, fsSettings] = await Promise.all([
+          fetchStudyDocsFromFirestore(true),
+          fetchSettingsFromFirestore(),
+        ]);
+        setDocuments(fsDocs);
+        if (fsSettings) setSettings(fsSettings);
+        setDocOrder(fsDocs.length + 1);
+        return;
+      }
+      throw err;
     }
-  }, []);
+  }, [currentUser.role]);
 
   useEffect(() => {
     loadAdminData()
