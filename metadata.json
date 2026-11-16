@@ -1,0 +1,6 @@
+{
+  "name": "Qajeelcha Macaafa Qulqulluu",
+  "description": "Giddugala Barnoota Macaafa Qulqulluu fi Chatbot AI — Adminiin faayiloota barnootaa ol-kaa'ee, barattoonni dashboard irratti jalqaba hanga xummuraatti ittiin baratan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

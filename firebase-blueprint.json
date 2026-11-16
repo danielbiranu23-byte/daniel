@@ -1,0 +1,398 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated student or admin profile stored in Firestore.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "username", "role", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted admin marker document used for RBAC verification.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global chatbot and study center configuration managed by admin.",
+      "type": "object",
+      "properties": {
+        "tutorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "welcomeGreeting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "systemInstructions": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "instructionFileName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "languageMode": {
+          "type": "string",
+          "enum": ["om", "en", "bilingual"]
+        },
+        "groundingMode": {
+          "type": "string",
+          "enum": ["strict_files", "files_plus_bible"]
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "tutorName",
+        "welcomeGreeting",
+        "languageMode",
+        "groundingMode",
+        "updatedBy",
+        "updatedAt"
+      ]
+    },
+    "StudyDocument": {
+      "title": "StudyDocument",
+      "description": "Curriculum lesson or study file uploaded or imported by admin.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "order": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["upload", "lesson", "starter"]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "textContent": {
+          "type": "string",
+          "maxLength": 450000
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "order",
+        "title",
+        "category",
+        "fileName",
+        "mimeType",
+        "sizeBytes",
+        "sourceType",
+        "active",
+        "summary",
+        "textContent",
+        "authorId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudentDocProgress": {
+      "title": "StudentDocProgress",
+      "description": "Per-user completion and quiz score for a study lesson.",
+      "type": "object",
+      "properties": {
+        "docId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "quizScore": {
+          "type": "number"
+        },
+        "quizTotal": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["docId", "userId", "completed", "updatedAt"]
+    },
+    "BibleHighlight": {
+      "title": "BibleHighlight",
+      "description": "Color-highlighted and saved Bible verse owned by a specific user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-:]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "bookId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        "omName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "enName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "chapter": {
+          "type": "number"
+        },
+        "verse": {
+          "type": "number"
+        },
+        "omText": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "enText": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "color": {
+          "type": "string",
+          "enum": ["yellow", "blue", "green", "rose"]
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "bookId",
+        "omName",
+        "enName",
+        "chapter",
+        "verse",
+        "omText",
+        "enText",
+        "color",
+        "savedAt"
+      ]
+    },
+    "ChatThread": {
+      "title": "ChatThread",
+      "description": "User chatbot conversation thread metadata.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "focusDocId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "title", "focusDocId", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Single message within a user's chat thread.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "role", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user profile document; strictly owner or admin readable/writable without self-role escalation."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted admin role marker documents."
+    },
+    "/appSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "Global application settings managed by admins and read by authenticated users."
+    },
+    "/studyDocuments/{docId}": {
+      "schema": { "$ref": "#/entities/StudyDocument" },
+      "description": "Study lessons and uploaded files managed by admins."
+    },
+    "/users/{uid}/progress/{docId}": {
+      "schema": { "$ref": "#/entities/StudentDocProgress" },
+      "description": "Student lesson completion and quiz score records."
+    },
+    "/users/{uid}/highlights/{highlightId}": {
+      "schema": { "$ref": "#/entities/BibleHighlight" },
+      "description": "Saved color-highlighted Bible verses owned by a user."
+    },
+    "/users/{uid}/chats/{threadId}": {
+      "schema": { "$ref": "#/entities/ChatThread" },
+      "description": "User's saved chatbot conversation threads."
+    },
+    "/users/{uid}/chats/{threadId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages inside a user's chatbot conversation thread."
+    }
+  }
+}

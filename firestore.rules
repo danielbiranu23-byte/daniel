@@ -1,0 +1,287 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Helpers ---
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidHighlightId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-:]+$');
+    }
+
+    function isOwner(uid) {
+      return isVerified() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'danielbiranu.23@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserProfile(data, uid) {
+      return data.keys().hasAll(['uid', 'displayName', 'username', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'username', 'role', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == uid && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.username is string && data.username.size() >= 1 && data.username.size() <= 80
+        && data.role is string && (data.role == 'user' || data.role == 'admin')
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidAdminRecord(data, uid) {
+      return data.keys().hasAll(['uid', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'createdAt'])
+        && data.uid is string && data.uid == uid && isValidId(data.uid)
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
+    function isValidAppSettings(data) {
+      return data.keys().hasAll(['tutorName', 'welcomeGreeting', 'languageMode', 'groundingMode', 'updatedBy', 'updatedAt'])
+        && data.keys().hasOnly(['tutorName', 'welcomeGreeting', 'systemInstructions', 'instructionFileName', 'languageMode', 'groundingMode', 'updatedBy', 'updatedAt'])
+        && data.tutorName is string && data.tutorName.size() >= 1 && data.tutorName.size() <= 120
+        && data.welcomeGreeting is string && data.welcomeGreeting.size() >= 1 && data.welcomeGreeting.size() <= 2000
+        && (!data.keys().hasAny(['systemInstructions']) || (data.systemInstructions is string && data.systemInstructions.size() <= 8000))
+        && (!data.keys().hasAny(['instructionFileName']) || (data.instructionFileName is string && data.instructionFileName.size() <= 200))
+        && data.languageMode is string && (data.languageMode == 'om' || data.languageMode == 'en' || data.languageMode == 'bilingual')
+        && data.groundingMode is string && (data.groundingMode == 'strict_files' || data.groundingMode == 'files_plus_bible')
+        && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidStudyDocument(data, docId) {
+      return data.keys().hasAll(['id', 'order', 'title', 'category', 'fileName', 'mimeType', 'sizeBytes', 'sourceType', 'active', 'summary', 'textContent', 'authorId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'order', 'title', 'category', 'fileName', 'mimeType', 'sizeBytes', 'sourceType', 'active', 'summary', 'textContent', 'authorId', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == docId && isValidId(data.id)
+        && data.order is number && data.order >= 0 && data.order <= 10000
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 300
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 120
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 255
+        && data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 120
+        && data.sizeBytes is number && data.sizeBytes >= 0 && data.sizeBytes <= 50000000
+        && data.sourceType is string && (data.sourceType == 'upload' || data.sourceType == 'lesson' || data.sourceType == 'starter')
+        && data.active is bool
+        && data.summary is string && data.summary.size() <= 1000
+        && data.textContent is string && data.textContent.size() <= 450000
+        && data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidProgress(data, uid, docId) {
+      return data.keys().hasAll(['docId', 'userId', 'completed', 'updatedAt'])
+        && data.keys().hasOnly(['docId', 'userId', 'completed', 'quizScore', 'quizTotal', 'updatedAt'])
+        && data.docId is string && data.docId == docId && isValidId(data.docId)
+        && data.userId is string && data.userId == uid && isValidId(data.userId)
+        && data.completed is bool
+        && (!data.keys().hasAny(['quizScore']) || (data.quizScore is number && data.quizScore >= 0 && data.quizScore <= 1000))
+        && (!data.keys().hasAny(['quizTotal']) || (data.quizTotal is number && data.quizTotal >= 0 && data.quizTotal <= 1000))
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidBibleHighlight(data, uid, highlightId) {
+      return data.keys().hasAll(['id', 'userId', 'bookId', 'omName', 'enName', 'chapter', 'verse', 'omText', 'enText', 'color', 'savedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'bookId', 'omName', 'enName', 'chapter', 'verse', 'omText', 'enText', 'color', 'savedAt'])
+        && data.id is string && data.id == highlightId && isValidHighlightId(data.id)
+        && data.userId is string && data.userId == uid && isValidId(data.userId)
+        && data.bookId is string && data.bookId.size() >= 2 && data.bookId.size() <= 16
+        && data.omName is string && data.omName.size() >= 1 && data.omName.size() <= 80
+        && data.enName is string && data.enName.size() >= 1 && data.enName.size() <= 80
+        && data.chapter is number && data.chapter >= 1 && data.chapter <= 200
+        && data.verse is number && data.verse >= 1 && data.verse <= 300
+        && data.omText is string && data.omText.size() <= 4000
+        && data.enText is string && data.enText.size() <= 4000
+        && data.color is string && (data.color == 'yellow' || data.color == 'blue' || data.color == 'green' || data.color == 'rose')
+        && data.savedAt is string && data.savedAt.size() >= 10 && data.savedAt.size() <= 40;
+    }
+
+    function isValidChatThread(data, uid, threadId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'focusDocId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'focusDocId', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == threadId && isValidId(data.id)
+        && data.userId is string && data.userId == uid && isValidId(data.userId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.focusDocId is string && data.focusDocId.size() >= 1 && data.focusDocId.size() <= 128
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidChatMessage(data, uid, messageId) {
+      return data.keys().hasAll(['id', 'userId', 'role', 'content', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'role', 'content', 'createdAt'])
+        && data.id is string && data.id == messageId && isValidId(data.id)
+        && data.userId is string && data.userId == uid && isValidId(data.userId)
+        && data.role is string && (data.role == 'user' || data.role == 'assistant')
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 40000
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
+    // --- Collection Match Blocks ---
+
+    // Connection health check single doc
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // Admin marker documents
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(uid)
+        && isValidAdminRecord(incoming(), uid)
+        && (isBootstrappedAdmin() || isAdmin());
+      allow update: if false;
+      allow delete: if isValidId(uid) && isAdmin();
+    }
+
+    // User profile documents (PII isolated to owner or admin)
+    match /users/{uid} {
+      allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(uid)
+        && isValidUserProfile(incoming(), uid)
+        && (
+          (isOwner(uid) && incoming().role == 'user')
+          || (isBootstrappedAdmin() && isOwner(uid) && incoming().role == 'admin')
+          || isAdmin()
+        );
+      allow update: if isValidId(uid)
+        && isValidUserProfile(incoming(), uid)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (
+          isAdmin()
+          || (
+            isOwner(uid)
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(uid) && isAdmin();
+
+      // User progress subcollection
+      match /progress/{docId} {
+        allow get: if isValidId(uid) && isValidId(docId) && (isOwner(uid) || isAdmin());
+        allow list: if isValidId(uid) && isVerified() && (
+          isAdmin() || (request.auth.uid == uid && resource.data.userId == request.auth.uid)
+        );
+        allow create: if isValidId(uid) && isValidId(docId)
+          && isOwner(uid)
+          && isValidProgress(incoming(), uid, docId);
+        allow update: if isValidId(uid) && isValidId(docId)
+          && isOwner(uid)
+          && isValidProgress(incoming(), uid, docId)
+          && incoming().userId == existing().userId
+          && incoming().docId == existing().docId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'quizScore', 'quizTotal', 'updatedAt']);
+        allow delete: if isValidId(uid) && isValidId(docId) && (isOwner(uid) || isAdmin());
+      }
+
+      // User color-highlighted & saved Bible verses
+      match /highlights/{highlightId} {
+        allow get: if isValidId(uid) && isValidHighlightId(highlightId) && (isOwner(uid) || isAdmin());
+        allow list: if isValidId(uid) && isVerified() && (
+          isAdmin() || (request.auth.uid == uid && resource.data.userId == request.auth.uid)
+        );
+        allow create: if isValidId(uid) && isValidHighlightId(highlightId)
+          && isOwner(uid)
+          && isValidBibleHighlight(incoming(), uid, highlightId);
+        allow update: if isValidId(uid) && isValidHighlightId(highlightId)
+          && isOwner(uid)
+          && isValidBibleHighlight(incoming(), uid, highlightId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['color', 'savedAt', 'omText', 'enText']);
+        allow delete: if isValidId(uid) && isValidHighlightId(highlightId) && (isOwner(uid) || isAdmin());
+      }
+
+      // User chat threads
+      match /chats/{threadId} {
+        allow get: if isValidId(uid) && isValidId(threadId) && (isOwner(uid) || isAdmin());
+        allow list: if isValidId(uid) && isVerified() && (
+          isAdmin() || (request.auth.uid == uid && resource.data.userId == request.auth.uid)
+        );
+        allow create: if isValidId(uid) && isValidId(threadId)
+          && isOwner(uid)
+          && isValidChatThread(incoming(), uid, threadId);
+        allow update: if isValidId(uid) && isValidId(threadId)
+          && isOwner(uid)
+          && isValidChatThread(incoming(), uid, threadId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'focusDocId', 'updatedAt']);
+        allow delete: if isValidId(uid) && isValidId(threadId) && (isOwner(uid) || isAdmin());
+
+        // Messages inside chat thread (Master Gate verifies parent chat exists and belongs to user)
+        match /messages/{messageId} {
+          allow get: if isValidId(uid) && isValidId(threadId) && isValidId(messageId) && (isOwner(uid) || isAdmin());
+          allow list: if isValidId(uid) && isValidId(threadId) && isVerified() && (
+            isAdmin() || (request.auth.uid == uid && resource.data.userId == request.auth.uid)
+          );
+          allow create: if isValidId(uid) && isValidId(threadId) && isValidId(messageId)
+            && isOwner(uid)
+            && isValidChatMessage(incoming(), uid, messageId)
+            && exists(/databases/$(database)/documents/users/$(uid)/chats/$(threadId))
+            && get(/databases/$(database)/documents/users/$(uid)/chats/$(threadId)).data.userId == request.auth.uid;
+          allow update: if false;
+          allow delete: if isValidId(uid) && isValidId(threadId) && isValidId(messageId) && (isOwner(uid) || isAdmin());
+        }
+      }
+    }
+
+    // Global App Settings (Admin writes; verified signed-in users read)
+    match /appSettings/{settingId} {
+      allow get: if isValidId(settingId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(settingId)
+        && isAdmin()
+        && isValidAppSettings(incoming());
+      allow delete: if isValidId(settingId) && isAdmin();
+    }
+
+    // Study Documents (Admin writes; verified signed-in users read active docs)
+    match /studyDocuments/{docId} {
+      allow get: if isValidId(docId) && isVerified() && (existing().active == true || isAdmin());
+      allow list: if isVerified() && (resource.data.active == true || isAdmin());
+      allow create: if isValidId(docId)
+        && isAdmin()
+        && isValidStudyDocument(incoming(), docId);
+      allow update: if isValidId(docId)
+        && isAdmin()
+        && isValidStudyDocument(incoming(), docId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['order', 'title', 'category', 'fileName', 'mimeType', 'sizeBytes', 'sourceType', 'active', 'summary', 'textContent', 'updatedAt']);
+      allow delete: if isValidId(docId) && isAdmin();
+    }
+  }
+}
