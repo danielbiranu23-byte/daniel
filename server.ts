@@ -8,6 +8,10 @@ import multer from 'multer';
 import { GoogleGenAI, Type } from '@google/genai';
 import { MongoClient, type Db } from 'mongodb';
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import pg from 'pg';
+
+const { Pool: PgPoolClass } = pg;
+type PgPool = pg.Pool;
 
 interface StudyDocument {
   id: string;
@@ -892,6 +896,16 @@ let mysqlPool: Pool | null = null;
 let mysqlSyncChain: Promise<void> = Promise.resolve();
 let mysqlStatus: 'not_configured' | 'connected' | 'invalid_config' | 'connection_failed' =
   'not_configured';
+let supabasePgPool: PgPool | null = null;
+let supabaseRestConfig: { url: string; serviceKey: string } | null = null;
+let supabaseSyncChain: Promise<void> = Promise.resolve();
+let supabaseStatus:
+  | 'not_configured'
+  | 'connected_postgres'
+  | 'connected_rest'
+  | 'invalid_config'
+  | 'tables_missing'
+  | 'connection_failed' = 'not_configured';
 
 function cloneStore(store: StoreData): StoreData {
   return JSON.parse(JSON.stringify(store)) as StoreData;
@@ -1539,9 +1553,715 @@ async function syncStoreToMongo(snapshot: StoreData): Promise<void> {
   }
 }
 
+function normalizePostgresUrl(raw: string): string {
+  let s = raw.trim();
+  if (!s) return '';
+  if (/^(?:SUPABASE_DB_URL|POSTGRES_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING|DATABASE_URL)\s*=/i.test(s)) {
+    s = s.replace(/^(?:SUPABASE_DB_URL|POSTGRES_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING|DATABASE_URL)\s*=\s*/i, '').trim();
+  }
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  const embeddedMatch = s.match(/(postgres(?:ql)?:\/\/[^\s"'`;]+)/i);
+  if (embeddedMatch) {
+    s = embeddedMatch[1];
+  }
+  return s;
+}
+
+async function ensureSupabasePgSchema(pool: PgPool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id TEXT PRIMARY KEY,
+      tutor_name TEXT NOT NULL,
+      welcome_greeting TEXT NOT NULL,
+      system_instructions TEXT NOT NULL,
+      instruction_file_name TEXT NULL,
+      instruction_pdf_path TEXT NULL,
+      language_mode TEXT NOT NULL,
+      grounding_mode TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS study_documents (
+      id TEXT PRIMARY KEY,
+      sort_order INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      source_type TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      summary TEXT NOT NULL,
+      text_content TEXT NOT NULL,
+      stored_file_path TEXT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      progress_json TEXT NOT NULL,
+      highlights_json TEXT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_threads (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      focus_doc_id TEXT NOT NULL,
+      messages_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      id TEXT PRIMARY KEY,
+      progress_json TEXT NOT NULL,
+      bible_seeded BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TEXT NOT NULL
+    )
+  `);
+}
+
+function hydrateStoreFromSqlRows(
+  settingsRows: Array<Record<string, unknown>>,
+  docsRows: Array<Record<string, unknown>>,
+  usersRows: Array<Record<string, unknown>>,
+  chatsRows: Array<Record<string, unknown>>,
+  sessionsRows: Array<Record<string, unknown>>,
+  metaRows: Array<Record<string, unknown>>
+): StoreData {
+  const starter = createStarterStore();
+  const sRow = settingsRows[0];
+  const settings: AdminSettings = sRow
+    ? {
+        tutorName: String(sRow.tutor_name || starter.settings.tutorName),
+        welcomeGreeting: String(sRow.welcome_greeting || starter.settings.welcomeGreeting),
+        systemInstructions: String(sRow.system_instructions || starter.settings.systemInstructions),
+        instructionFileName: sRow.instruction_file_name ? String(sRow.instruction_file_name) : undefined,
+        instructionPdfPath: sRow.instruction_pdf_path ? String(sRow.instruction_pdf_path) : undefined,
+        languageMode: (sRow.language_mode as AdminSettings['languageMode']) || starter.settings.languageMode,
+        groundingMode: (sRow.grounding_mode as AdminSettings['groundingMode']) || starter.settings.groundingMode,
+      }
+    : starter.settings;
+
+  const documents: StudyDocument[] =
+    docsRows.length > 0
+      ? docsRows.map((row) => ({
+          id: String(row.id),
+          order: Number(row.sort_order) || 1,
+          title: String(row.title || ''),
+          category: String(row.category || ''),
+          fileName: String(row.file_name || ''),
+          mimeType: String(row.mime_type || 'text/plain'),
+          sizeBytes: Number(row.size_bytes) || 0,
+          sourceType: (row.source_type as StudyDocument['sourceType']) || 'starter',
+          active: Boolean(row.active),
+          summary: String(row.summary || ''),
+          textContent: String(row.text_content || ''),
+          storedFilePath: row.stored_file_path ? String(row.stored_file_path) : undefined,
+          createdAt: String(row.created_at || new Date().toISOString()),
+          updatedAt: String(row.updated_at || new Date().toISOString()),
+        }))
+      : starter.documents;
+
+  const users: UserAccount[] =
+    usersRows.length > 0
+      ? usersRows.map((row) => ({
+          id: String(row.id),
+          username: String(row.username),
+          fullName: String(row.full_name || row.username),
+          role: row.role === 'admin' ? 'admin' : 'user',
+          passwordHash: String(row.password_hash),
+          progress: parseJsonColumn<StudentProgress>(row.progress_json, {
+            completedDocIds: [],
+            quizScores: {},
+          }),
+          highlights: parseJsonColumn<BibleHighlight[]>(row.highlights_json, []),
+          createdAt: String(row.created_at || new Date().toISOString()),
+        }))
+      : starter.users;
+
+  const chats: ChatThread[] = chatsRows.map((row) => ({
+    id: String(row.id),
+    userId: String(row.user_id),
+    title: String(row.title || 'Haasaa'),
+    focusDocId: String(row.focus_doc_id || 'all'),
+    messages: parseJsonColumn<ChatMessage[]>(row.messages_json, []),
+    createdAt: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  }));
+
+  const sessionsMap: Record<string, SessionRecord> = {};
+  for (const row of sessionsRows) {
+    sessionsMap[String(row.token)] = {
+      userId: String(row.user_id),
+      createdAt: String(row.created_at || new Date().toISOString()),
+    };
+  }
+
+  const mRow = metaRows[0];
+  const hydrated: StoreData = {
+    settings,
+    documents,
+    chats,
+    progress: parseJsonColumn<StudentProgress>(mRow?.progress_json, {
+      completedDocIds: [],
+      quizScores: {},
+    }),
+    users,
+    sessions: sessionsMap,
+    bibleSeeded: mRow ? Boolean(mRow.bible_seeded) : undefined,
+  };
+
+  if (!hydrated.users.some((u) => u.role === 'admin')) {
+    hydrated.users.unshift(starter.users[0]);
+  }
+  for (const c of hydrated.chats) {
+    if (!c.userId) c.userId = hydrated.users[0].id;
+  }
+
+  if (!hydrated.bibleSeeded && !hydrated.documents.some((d) => d.id.startsWith('doc-bible-'))) {
+    const johnDoc = createBibleStudyDocument(
+      'JHN',
+      'bilingual',
+      hydrated.documents.length + 1,
+      'Kakuu Haaraa (Oromo & English)'
+    );
+    if (johnDoc) {
+      hydrated.documents.push(johnDoc);
+      hydrated.bibleSeeded = true;
+    }
+  }
+
+  return hydrated;
+}
+
+async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
+  if (!supabasePgPool) return;
+  const client = await supabasePgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const now = new Date().toISOString();
+
+    await client.query(
+      `INSERT INTO app_settings
+        (id, tutor_name, welcome_greeting, system_instructions, instruction_file_name, instruction_pdf_path, language_mode, grounding_mode, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (id) DO UPDATE SET
+        tutor_name = EXCLUDED.tutor_name,
+        welcome_greeting = EXCLUDED.welcome_greeting,
+        system_instructions = EXCLUDED.system_instructions,
+        instruction_file_name = EXCLUDED.instruction_file_name,
+        instruction_pdf_path = EXCLUDED.instruction_pdf_path,
+        language_mode = EXCLUDED.language_mode,
+        grounding_mode = EXCLUDED.grounding_mode,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        'global',
+        snapshot.settings.tutorName,
+        snapshot.settings.welcomeGreeting,
+        snapshot.settings.systemInstructions,
+        snapshot.settings.instructionFileName ?? null,
+        snapshot.settings.instructionPdfPath ?? null,
+        snapshot.settings.languageMode,
+        snapshot.settings.groundingMode,
+        now,
+      ]
+    );
+
+    const docIds = snapshot.documents.map((d) => d.id);
+    for (const d of snapshot.documents) {
+      await client.query(
+        `INSERT INTO study_documents
+          (id, sort_order, title, category, file_name, mime_type, size_bytes, source_type, active, summary, text_content, stored_file_path, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (id) DO UPDATE SET
+          sort_order = EXCLUDED.sort_order,
+          title = EXCLUDED.title,
+          category = EXCLUDED.category,
+          file_name = EXCLUDED.file_name,
+          mime_type = EXCLUDED.mime_type,
+          size_bytes = EXCLUDED.size_bytes,
+          source_type = EXCLUDED.source_type,
+          active = EXCLUDED.active,
+          summary = EXCLUDED.summary,
+          text_content = EXCLUDED.text_content,
+          stored_file_path = EXCLUDED.stored_file_path,
+          created_at = EXCLUDED.created_at,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          d.id,
+          d.order,
+          d.title,
+          d.category,
+          d.fileName,
+          d.mimeType,
+          d.sizeBytes,
+          d.sourceType,
+          Boolean(d.active),
+          d.summary || '',
+          d.textContent || '',
+          d.storedFilePath ?? null,
+          d.createdAt,
+          d.updatedAt,
+        ]
+      );
+    }
+    if (docIds.length > 0) {
+      await client.query('DELETE FROM study_documents WHERE NOT (id = ANY($1::text[]))', [docIds]);
+    } else {
+      await client.query('DELETE FROM study_documents');
+    }
+
+    const userIds = snapshot.users.map((u) => u.id);
+    for (const u of snapshot.users) {
+      await client.query(
+        `INSERT INTO users
+          (id, username, full_name, role, password_hash, progress_json, highlights_json, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (id) DO UPDATE SET
+          username = EXCLUDED.username,
+          full_name = EXCLUDED.full_name,
+          role = EXCLUDED.role,
+          password_hash = EXCLUDED.password_hash,
+          progress_json = EXCLUDED.progress_json,
+          highlights_json = EXCLUDED.highlights_json,
+          created_at = EXCLUDED.created_at`,
+        [
+          u.id,
+          u.username,
+          u.fullName,
+          u.role,
+          u.passwordHash,
+          JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
+          JSON.stringify(u.highlights ?? []),
+          u.createdAt,
+        ]
+      );
+    }
+    if (userIds.length > 0) {
+      await client.query('DELETE FROM users WHERE NOT (id = ANY($1::text[]))', [userIds]);
+    } else {
+      await client.query('DELETE FROM users');
+    }
+
+    const chatIds = snapshot.chats.map((c) => c.id);
+    for (const c of snapshot.chats) {
+      await client.query(
+        `INSERT INTO chat_threads
+          (id, user_id, title, focus_doc_id, messages_json, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (id) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          title = EXCLUDED.title,
+          focus_doc_id = EXCLUDED.focus_doc_id,
+          messages_json = EXCLUDED.messages_json,
+          created_at = EXCLUDED.created_at,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          c.id,
+          c.userId,
+          c.title,
+          c.focusDocId,
+          JSON.stringify(c.messages ?? []),
+          c.createdAt,
+          c.updatedAt,
+        ]
+      );
+    }
+    if (chatIds.length > 0) {
+      await client.query('DELETE FROM chat_threads WHERE NOT (id = ANY($1::text[]))', [chatIds]);
+    } else {
+      await client.query('DELETE FROM chat_threads');
+    }
+
+    const sessionEntries = Object.entries(snapshot.sessions || {});
+    const tokens = sessionEntries.map(([t]) => t);
+    for (const [token, rec] of sessionEntries) {
+      await client.query(
+        `INSERT INTO sessions (token, user_id, created_at)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (token) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          created_at = EXCLUDED.created_at`,
+        [token, rec.userId, rec.createdAt]
+      );
+    }
+    if (tokens.length > 0) {
+      await client.query('DELETE FROM sessions WHERE NOT (token = ANY($1::text[]))', [tokens]);
+    } else {
+      await client.query('DELETE FROM sessions');
+    }
+
+    await client.query(
+      `INSERT INTO app_meta (id, progress_json, bible_seeded, updated_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (id) DO UPDATE SET
+        progress_json = EXCLUDED.progress_json,
+        bible_seeded = EXCLUDED.bible_seeded,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        'store_meta',
+        JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
+        Boolean(snapshot.bibleSeeded),
+        now,
+      ]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Supabase PostgreSQL sync error:', err instanceof Error ? err.message : err);
+  } finally {
+    client.release();
+  }
+}
+
+async function supabaseRestFetch(
+  cfg: { url: string; serviceKey: string },
+  pathAndQuery: string,
+  init?: RequestInit
+): Promise<globalThis.Response> {
+  const baseUrl = cfg.url.replace(/\/+$/, '');
+  return fetch(`${baseUrl}/rest/v1/${pathAndQuery}`, {
+    ...init,
+    headers: {
+      apikey: cfg.serviceKey,
+      Authorization: `Bearer ${cfg.serviceKey}`,
+      'Content-Type': 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+}
+
+async function syncStoreToSupabaseRest(snapshot: StoreData): Promise<void> {
+  if (!supabaseRestConfig) return;
+  const cfg = supabaseRestConfig;
+  const now = new Date().toISOString();
+  try {
+    await supabaseRestFetch(cfg, 'app_settings?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify([
+        {
+          id: 'global',
+          tutor_name: snapshot.settings.tutorName,
+          welcome_greeting: snapshot.settings.welcomeGreeting,
+          system_instructions: snapshot.settings.systemInstructions,
+          instruction_file_name: snapshot.settings.instructionFileName ?? null,
+          instruction_pdf_path: snapshot.settings.instructionPdfPath ?? null,
+          language_mode: snapshot.settings.languageMode,
+          grounding_mode: snapshot.settings.groundingMode,
+          updated_at: now,
+        },
+      ]),
+    });
+
+    if (snapshot.documents.length > 0) {
+      await supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(
+          snapshot.documents.map((d) => ({
+            id: d.id,
+            sort_order: d.order,
+            title: d.title,
+            category: d.category,
+            file_name: d.fileName,
+            mime_type: d.mimeType,
+            size_bytes: d.sizeBytes,
+            source_type: d.sourceType,
+            active: Boolean(d.active),
+            summary: d.summary || '',
+            text_content: d.textContent || '',
+            stored_file_path: d.storedFilePath ?? null,
+            created_at: d.createdAt,
+            updated_at: d.updatedAt,
+          }))
+        ),
+      });
+    }
+    const existingDocsResp = await supabaseRestFetch(cfg, 'study_documents?select=id');
+    if (existingDocsResp.ok) {
+      const existingDocs = (await existingDocsResp.json()) as Array<{ id: string }>;
+      const keepDocIds = new Set(snapshot.documents.map((d) => d.id));
+      for (const row of existingDocs) {
+        if (!keepDocIds.has(row.id)) {
+          await supabaseRestFetch(cfg, `study_documents?id=eq.${encodeURIComponent(row.id)}`, {
+            method: 'DELETE',
+          });
+        }
+      }
+    }
+
+    if (snapshot.users.length > 0) {
+      await supabaseRestFetch(cfg, 'users?on_conflict=id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(
+          snapshot.users.map((u) => ({
+            id: u.id,
+            username: u.username,
+            full_name: u.fullName,
+            role: u.role,
+            password_hash: u.passwordHash,
+            progress_json: JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
+            highlights_json: JSON.stringify(u.highlights ?? []),
+            created_at: u.createdAt,
+          }))
+        ),
+      });
+    }
+
+    if (snapshot.chats.length > 0) {
+      await supabaseRestFetch(cfg, 'chat_threads?on_conflict=id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(
+          snapshot.chats.map((c) => ({
+            id: c.id,
+            user_id: c.userId,
+            title: c.title,
+            focus_doc_id: c.focusDocId,
+            messages_json: JSON.stringify(c.messages ?? []),
+            created_at: c.createdAt,
+            updated_at: c.updatedAt,
+          }))
+        ),
+      });
+    }
+    const existingChatsResp = await supabaseRestFetch(cfg, 'chat_threads?select=id');
+    if (existingChatsResp.ok) {
+      const existingChats = (await existingChatsResp.json()) as Array<{ id: string }>;
+      const keepChatIds = new Set(snapshot.chats.map((c) => c.id));
+      for (const row of existingChats) {
+        if (!keepChatIds.has(row.id)) {
+          await supabaseRestFetch(cfg, `chat_threads?id=eq.${encodeURIComponent(row.id)}`, {
+            method: 'DELETE',
+          });
+        }
+      }
+    }
+
+    const sessionEntries = Object.entries(snapshot.sessions || {});
+    if (sessionEntries.length > 0) {
+      await supabaseRestFetch(cfg, 'sessions?on_conflict=token', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(
+          sessionEntries.map(([token, rec]) => ({
+            token,
+            user_id: rec.userId,
+            created_at: rec.createdAt,
+          }))
+        ),
+      });
+    }
+
+    await supabaseRestFetch(cfg, 'app_meta?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify([
+        {
+          id: 'store_meta',
+          progress_json: JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
+          bible_seeded: Boolean(snapshot.bibleSeeded),
+          updated_at: now,
+        },
+      ]),
+    });
+  } catch (err) {
+    console.error('Supabase REST sync error:', err instanceof Error ? err.message : err);
+  }
+}
+
+async function initSupabaseStore(): Promise<void> {
+  const rawPgUrl =
+    process.env.SUPABASE_DB_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_PRISMA_URL ||
+    (/^\s*postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || '') ? process.env.DATABASE_URL || '' : '');
+  const pgUrl = normalizePostgresUrl(rawPgUrl);
+
+  const restUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  const serviceKey = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    ''
+  ).trim();
+
+  if (pgUrl) {
+    if (!/^postgres(?:ql)?:\/\//i.test(pgUrl) || /\[YOUR-PASSWORD\]/i.test(pgUrl)) {
+      supabaseStatus = 'invalid_config';
+      console.warn('Supabase Postgres URL invalid (replace [YOUR-PASSWORD] and ensure postgres:// format).');
+      return;
+    }
+    try {
+      const isLocal = /localhost|127\.0\.0\.1|::1/i.test(pgUrl);
+      supabasePgPool = new PgPoolClass({
+        connectionString: pgUrl,
+        max: 5,
+        connectionTimeoutMillis: 6000,
+        ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
+      });
+      await supabasePgPool.query('SELECT 1');
+      await ensureSupabasePgSchema(supabasePgPool);
+      supabaseStatus = 'connected_postgres';
+      console.log('Supabase PostgreSQL connected');
+
+      const [settingsRes, docsRes, usersRes, chatsRes, sessionsRes, metaRes] = await Promise.all([
+        supabasePgPool.query('SELECT * FROM app_settings WHERE id = $1', ['global']),
+        supabasePgPool.query('SELECT * FROM study_documents ORDER BY sort_order ASC'),
+        supabasePgPool.query('SELECT * FROM users'),
+        supabasePgPool.query('SELECT * FROM chat_threads'),
+        supabasePgPool.query('SELECT * FROM sessions'),
+        supabasePgPool.query('SELECT * FROM app_meta WHERE id = $1', ['store_meta']),
+      ]);
+
+      if (usersRes.rows.length === 0 && docsRes.rows.length === 0 && settingsRes.rows.length === 0) {
+        const seedStore = loadStore();
+        await syncStoreToSupabasePg(seedStore);
+        console.log('Seeded initial Qajeelcha Macaafaa data into Supabase PostgreSQL');
+        return;
+      }
+
+      const hydrated = hydrateStoreFromSqlRows(
+        settingsRes.rows,
+        docsRes.rows,
+        usersRes.rows,
+        chatsRes.rows,
+        sessionsRes.rows,
+        metaRes.rows
+      );
+      cachedStore = hydrated;
+      ensureDataDirs();
+      fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
+      return;
+    } catch (err) {
+      supabaseStatus = 'connection_failed';
+      console.error(
+        'Supabase PostgreSQL connection failed:',
+        err instanceof Error ? err.message : err
+      );
+      if (supabasePgPool) {
+        await supabasePgPool.end().catch(() => {});
+        supabasePgPool = null;
+      }
+    }
+  }
+
+  if (restUrl && serviceKey) {
+    if (!/^https?:\/\//i.test(restUrl)) {
+      supabaseStatus = 'invalid_config';
+      return;
+    }
+    const cfg = { url: restUrl, serviceKey };
+    try {
+      const [settingsResp, docsResp, usersResp, chatsResp, sessionsResp, metaResp] = await Promise.all([
+        supabaseRestFetch(cfg, 'app_settings?id=eq.global'),
+        supabaseRestFetch(cfg, 'study_documents?order=sort_order.asc'),
+        supabaseRestFetch(cfg, 'users'),
+        supabaseRestFetch(cfg, 'chat_threads'),
+        supabaseRestFetch(cfg, 'sessions'),
+        supabaseRestFetch(cfg, 'app_meta?id=eq.store_meta'),
+      ]);
+
+      if (settingsResp.status === 404 || usersResp.status === 404) {
+        supabaseStatus = 'tables_missing';
+        console.warn('Supabase REST connected, but tables have not been created yet.');
+        return;
+      }
+      if (!settingsResp.ok || !usersResp.ok) {
+        const errBody = await settingsResp.text().catch(() => '');
+        if (/PGRST205|does not exist|Could not find the table/i.test(errBody)) {
+          supabaseStatus = 'tables_missing';
+          return;
+        }
+        supabaseStatus = 'connection_failed';
+        return;
+      }
+
+      const [settingsRows, docsRows, usersRows, chatsRows, sessionsRows, metaRows] =
+        await Promise.all([
+          settingsResp.json() as Promise<Array<Record<string, unknown>>>,
+          docsResp.ok ? (docsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
+          usersResp.json() as Promise<Array<Record<string, unknown>>>,
+          chatsResp.ok ? (chatsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
+          sessionsResp.ok ? (sessionsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
+          metaResp.ok ? (metaResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
+        ]);
+
+      supabaseRestConfig = cfg;
+      supabaseStatus = 'connected_rest';
+      console.log('Supabase REST API connected');
+
+      if (usersRows.length === 0 && docsRows.length === 0 && settingsRows.length === 0) {
+        const seedStore = loadStore();
+        await syncStoreToSupabaseRest(seedStore);
+        console.log('Seeded initial Qajeelcha Macaafaa data into Supabase REST');
+        return;
+      }
+
+      const hydrated = hydrateStoreFromSqlRows(
+        settingsRows,
+        docsRows,
+        usersRows,
+        chatsRows,
+        sessionsRows,
+        metaRows
+      );
+      cachedStore = hydrated;
+      ensureDataDirs();
+      fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
+      return;
+    } catch (err) {
+      supabaseStatus = 'connection_failed';
+      console.error('Supabase REST connection failed:', err instanceof Error ? err.message : err);
+      supabaseRestConfig = null;
+    }
+  } else if (restUrl || serviceKey) {
+    supabaseStatus = 'invalid_config';
+  } else {
+    supabaseStatus = 'not_configured';
+  }
+}
+
 function queueExternalDbSync(store: StoreData): void {
-  if (!mongoDb && !mysqlPool) return;
+  if (!mongoDb && !mysqlPool && !supabasePgPool && !supabaseRestConfig) return;
   const snapshot = cloneStore(store);
+  if (supabasePgPool) {
+    supabaseSyncChain = supabaseSyncChain
+      .then(() => syncStoreToSupabasePg(snapshot))
+      .catch((err) => {
+        console.error('Supabase PostgreSQL sync queue error:', err);
+      });
+  } else if (supabaseRestConfig) {
+    supabaseSyncChain = supabaseSyncChain
+      .then(() => syncStoreToSupabaseRest(snapshot))
+      .catch((err) => {
+        console.error('Supabase REST sync queue error:', err);
+      });
+  }
   if (mysqlPool) {
     mysqlSyncChain = mysqlSyncChain
       .then(() => syncStoreToMysql(snapshot))
@@ -1559,9 +2279,9 @@ function queueExternalDbSync(store: StoreData): void {
 }
 
 export async function flushDbSync(timeoutMs = 3000): Promise<void> {
-  if (!mongoDb && !mysqlPool) return;
+  if (!mongoDb && !mysqlPool && !supabasePgPool && !supabaseRestConfig) return;
   await Promise.race([
-    Promise.all([mysqlSyncChain, mongoSyncChain]),
+    Promise.all([supabaseSyncChain, mysqlSyncChain, mongoSyncChain]),
     new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 }
@@ -1988,17 +2708,30 @@ function buildDocumentParts(
 }
 
 export async function createApp(httpServer?: http.Server): Promise<express.Express> {
-  await initMysqlStore();
-  if (!mysqlPool) {
+  await initSupabaseStore();
+  if (!supabasePgPool && !supabaseRestConfig) {
+    await initMysqlStore();
+  }
+  if (!supabasePgPool && !supabaseRestConfig && !mysqlPool) {
     await initMongoStore();
   }
   const app = express();
   app.use(express.json({ limit: '5mb' }));
 
   app.get('/api/health', (_req: Request, res: Response) => {
+    const dbEngine =
+      supabasePgPool || supabaseRestConfig
+        ? 'supabase'
+        : mysqlPool
+          ? 'mysql'
+          : mongoDb
+            ? 'mongodb'
+            : 'local_firestore';
     res.json({
       ok: true,
-      dbEngine: mysqlPool ? 'mysql' : mongoDb ? 'mongodb' : 'local_firestore',
+      dbEngine,
+      supabaseConnected: Boolean(supabasePgPool || supabaseRestConfig),
+      supabaseStatus,
       mysqlConnected: Boolean(mysqlPool),
       mysqlStatus,
       mongoConnected: Boolean(mongoDb),
