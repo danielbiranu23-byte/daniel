@@ -907,6 +907,12 @@ let supabaseStatus:
   | 'tables_missing'
   | 'rls_blocked'
   | 'connection_failed' = 'not_configured';
+let lastSupabaseSyncStatus: 'ok' | 'rls_blocked' | 'error' = 'ok';
+const syncedSupabaseDocSignatures = new Map<string, string>();
+
+function getDocSyncSignature(d: StudyDocument): string {
+  return `${d.updatedAt}|${d.order}|${Boolean(d.active)}|${d.sizeBytes}|${d.title}|${d.category}|${d.storedFilePath ? d.storedFilePath.length : 0}`;
+}
 
 function cloneStore(store: StoreData): StoreData {
   return JSON.parse(JSON.stringify(store)) as StoreData;
@@ -1929,7 +1935,9 @@ async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
     );
 
     await client.query('COMMIT');
+    lastSupabaseSyncStatus = 'ok';
   } catch (err) {
+    lastSupabaseSyncStatus = 'error';
     await client.query('ROLLBACK').catch(() => {});
     console.error('Supabase PostgreSQL sync error:', err instanceof Error ? err.message : err);
   } finally {
@@ -2046,30 +2054,49 @@ async function syncStoreToSupabaseRest(
       );
     }
 
-    if (snapshot.documents.length > 0) {
+    const docsToUpsert = snapshot.documents.filter(
+      (d) => syncedSupabaseDocSignatures.get(d.id) !== getDocSyncSignature(d)
+    );
+
+    if (docsToUpsert.length > 0) {
       tasks.push(
-        supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
-          method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates' },
-          body: JSON.stringify(
-            snapshot.documents.map((d) => ({
-              id: d.id,
-              sort_order: d.order,
-              title: d.title,
-              category: d.category,
-              file_name: d.fileName,
-              mime_type: d.mimeType,
-              size_bytes: d.sizeBytes,
-              source_type: d.sourceType,
-              active: Boolean(d.active),
-              summary: d.summary || '',
-              text_content: d.textContent || '',
-              stored_file_path: d.storedFilePath ?? null,
-              created_at: d.createdAt,
-              updated_at: d.updatedAt,
-            }))
-          ),
-        }).then((r) => assertRestOk('study_documents', r))
+        (async () => {
+          const concurrency = 3;
+          for (let i = 0; i < docsToUpsert.length; i += concurrency) {
+            const batch = docsToUpsert.slice(i, i + concurrency);
+            await Promise.all(
+              batch.map(async (d) => {
+                const resp = await supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
+                  method: 'POST',
+                  headers: { Prefer: 'resolution=merge-duplicates' },
+                  body: JSON.stringify([
+                    {
+                      id: d.id,
+                      sort_order: d.order,
+                      title: d.title,
+                      category: d.category,
+                      file_name: d.fileName,
+                      mime_type: d.mimeType,
+                      size_bytes: d.sizeBytes,
+                      source_type: d.sourceType,
+                      active: Boolean(d.active),
+                      summary: d.summary || '',
+                      text_content: d.textContent || '',
+                      stored_file_path: d.storedFilePath ?? null,
+                      created_at: d.createdAt,
+                      updated_at: d.updatedAt,
+                    },
+                  ]),
+                });
+                if (resp.ok) {
+                  syncedSupabaseDocSignatures.set(d.id, getDocSyncSignature(d));
+                } else {
+                  await assertRestOk(`study_documents(${d.id})`, resp);
+                }
+              })
+            );
+          }
+        })()
       );
     }
 
@@ -2095,6 +2122,7 @@ async function syncStoreToSupabaseRest(
 
     await Promise.all(tasks);
     if (rlsBlocked) {
+      lastSupabaseSyncStatus = 'rls_blocked';
       return 'rls_blocked';
     }
 
@@ -2107,11 +2135,16 @@ async function syncStoreToSupabaseRest(
           await Promise.all(
             existingDocs
               .filter((row) => !keepDocIds.has(row.id))
-              .map((row) =>
-                supabaseRestFetch(cfg, `study_documents?id=eq.${encodeURIComponent(row.id)}`, {
-                  method: 'DELETE',
-                })
-              )
+              .map(async (row) => {
+                const delResp = await supabaseRestFetch(
+                  cfg,
+                  `study_documents?id=eq.${encodeURIComponent(row.id)}`,
+                  { method: 'DELETE' }
+                );
+                if (delResp.ok) {
+                  syncedSupabaseDocSignatures.delete(row.id);
+                }
+              })
           );
         }
       })(),
@@ -2149,9 +2182,11 @@ async function syncStoreToSupabaseRest(
       })(),
     ]);
 
-    return rlsBlocked ? 'rls_blocked' : hadError ? 'error' : 'ok';
+    lastSupabaseSyncStatus = rlsBlocked ? 'rls_blocked' : hadError ? 'error' : 'ok';
+    return lastSupabaseSyncStatus;
   } catch (err) {
     console.error('Supabase REST sync error:', err instanceof Error ? err.message : err);
+    lastSupabaseSyncStatus = 'error';
     return 'error';
   }
 }
@@ -2329,6 +2364,13 @@ async function initSupabaseStore(): Promise<void> {
         sessionsRows,
         metaRows
       );
+      syncedSupabaseDocSignatures.clear();
+      const fetchedDocIds = new Set(docsRows.map((row) => String(row.id)));
+      for (const doc of hydrated.documents) {
+        if (fetchedDocIds.has(doc.id)) {
+          syncedSupabaseDocSignatures.set(doc.id, getDocSyncSignature(doc));
+        }
+      }
       cachedStore = hydrated;
       ensureDataDirs();
       fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
@@ -2608,9 +2650,57 @@ function getAiClient(): GoogleGenAI | null {
   return cachedAiClient;
 }
 
+const PDF_DATA_URI_PREFIX = 'data:application/pdf;base64,';
+const MAX_INLINE_PDF_BYTES = 15 * 1024 * 1024;
+
+function readStoredPdfBuffer(storedPath?: string): Buffer | null {
+  if (!storedPath) return null;
+  if (storedPath.startsWith(PDF_DATA_URI_PREFIX)) {
+    try {
+      return Buffer.from(storedPath.slice(PDF_DATA_URI_PREFIX.length), 'base64');
+    } catch {
+      return null;
+    }
+  }
+  if (fs.existsSync(storedPath)) {
+    try {
+      return fs.readFileSync(storedPath);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function readUploadedTextFile(filePath: string): string {
+  const raw = fs.readFileSync(filePath);
+  let decoded: string;
+  if (raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe) {
+    decoded = raw.subarray(2).toString('utf16le');
+  } else if (raw.length >= 2 && raw[0] === 0xfe && raw[1] === 0xff) {
+    const swapped = Buffer.from(raw.subarray(2));
+    swapped.swap16();
+    decoded = swapped.toString('utf16le');
+  } else {
+    decoded = raw.toString('utf8');
+  }
+  return decoded.replace(/^\uFEFF/, '').replace(/\u0000/g, '');
+}
+
+function sanitizeDocumentForClient(doc: StudyDocument): StudyDocument {
+  if (!doc.storedFilePath) return doc;
+  return {
+    ...doc,
+    storedFilePath: doc.storedFilePath.startsWith('data:') ? 'database' : doc.storedFilePath,
+  };
+}
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    destination: (_req, _file, cb) => {
+      ensureDataDirs();
+      cb(null, UPLOADS_DIR);
+    },
     filename: (_req, file, cb) => {
       const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
       cb(null, `${Date.now()}_${safeName}`);
@@ -2773,31 +2863,33 @@ function buildDocumentParts(
 ): Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> {
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
-  if (settings?.instructionPdfPath && fs.existsSync(settings.instructionPdfPath)) {
-    const pdfBytes = fs.readFileSync(settings.instructionPdfPath);
+  const instructionPdfBytes = readStoredPdfBuffer(settings?.instructionPdfPath);
+  if (instructionPdfBytes) {
     parts.push({
-      text: `--- ADMIN CHATBOT INSTRUCTION PDF FILE: "${settings.instructionFileName || 'chatbot_instructions.pdf'}" ---`,
+      text: `--- ADMIN CHATBOT INSTRUCTION PDF FILE: "${settings?.instructionFileName || 'chatbot_instructions.pdf'}" ---`,
     });
     parts.push({
       inlineData: {
         mimeType: 'application/pdf',
-        data: pdfBytes.toString('base64'),
+        data: instructionPdfBytes.toString('base64'),
       },
     });
   }
 
   for (const doc of docs) {
-    if (doc.mimeType === 'application/pdf' && doc.storedFilePath && fs.existsSync(doc.storedFilePath)) {
-      const pdfBytes = fs.readFileSync(doc.storedFilePath);
-      parts.push({
-        text: `--- ADMIN STUDY PDF FILE: "${doc.title}" (${doc.fileName}, Category: ${doc.category}) ---`,
-      });
-      parts.push({
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: pdfBytes.toString('base64'),
-        },
-      });
+    if (doc.mimeType === 'application/pdf') {
+      const pdfBytes = readStoredPdfBuffer(doc.storedFilePath);
+      if (pdfBytes) {
+        parts.push({
+          text: `--- ADMIN STUDY PDF FILE: "${doc.title}" (${doc.fileName}, Category: ${doc.category}) ---`,
+        });
+        parts.push({
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBytes.toString('base64'),
+          },
+        });
+      }
     } else if (doc.textContent) {
       const truncated = doc.textContent.slice(0, 40000);
       parts.push({
@@ -3149,7 +3241,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         languageMode: store.settings.languageMode,
         groundingMode: store.settings.groundingMode,
       },
-      documents: activeDocs,
+      documents: activeDocs.map(sanitizeDocumentForClient),
       progress: user.progress,
     });
   });
@@ -3163,7 +3255,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       return;
     }
     res.json({
-      documents: [...store.documents].sort((a, b) => a.order - b.order),
+      documents: [...store.documents].sort((a, b) => a.order - b.order).map(sanitizeDocumentForClient),
       settings: {
         tutorName: store.settings.tutorName,
         welcomeGreeting: store.settings.welcomeGreeting,
@@ -3177,157 +3269,252 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
   });
 
   // Admin: upload single or multiple study files (.txt, .md, .csv, .json, .pdf, .html)
-  app.post('/api/admin/documents/upload', upload.array('files', 10), async (req: Request, res: Response) => {
-    const store = loadStore();
-    const user = getAuthenticatedUser(req, store);
-    const files = (req.files as Express.Multer.File[]) || [];
-
-    if (!user || user.role !== 'admin') {
-      for (const f of files) {
-        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
-      }
-      res.status(403).json({ error: 'Aangoon Admin barbaachisaa dha.' });
-      return;
-    }
-
-    if (files.length === 0) {
-      res.status(400).json({ error: 'Faayilli hin filatamne.' });
-      return;
-    }
-
-    const allowedExts = ['.txt', '.md', '.csv', '.json', '.pdf', '.html'];
-    const baseTitle = ((req.body.title as string) || '').trim();
-    const category = ((req.body.category as string) || '').trim() || 'Barnoota Waliigalaa';
-    let nextOrder = Number(req.body.order) || store.documents.length + 1;
-
-    const createdDocs: StudyDocument[] = [];
-    const rejectedNames: string[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const ext = path.extname(file.originalname).toLowerCase();
-      if (!allowedExts.includes(ext)) {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        rejectedNames.push(file.originalname);
-        continue;
-      }
-
-      const title =
-        files.length === 1 && baseTitle
-          ? baseTitle
-          : path.basename(file.originalname, ext).replace(/[_-]+/g, ' ');
-
-      let textContent = '';
-      let summary = '';
-      const mimeType =
-        ext === '.pdf'
-          ? 'application/pdf'
-          : ext === '.md'
-            ? 'text/markdown'
-            : 'text/plain';
-
-      if (ext !== '.pdf') {
-        textContent = fs.readFileSync(file.path, 'utf8');
-        summary = textContent.replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
-        if (summary.length === 180) summary += '...';
-      } else {
-        summary = `Faayila PDF: ${file.originalname} — Chatbotiin qabiyyee PDF kanaa kallattiin dubbisuu danda’a.`;
-      }
-
-      const now = new Date().toISOString();
-      const newDoc: StudyDocument = {
-        id: `doc-${crypto.randomUUID().slice(0, 8)}`,
-        order: nextOrder++,
-        title,
-        category,
-        fileName: file.originalname,
-        mimeType,
-        sizeBytes: file.size,
-        sourceType: 'upload',
-        active: true,
-        summary: summary || title,
-        textContent,
-        storedFilePath: file.path,
-        createdAt: now,
-        updatedAt: now,
-      };
-      store.documents.push(newDoc);
-      createdDocs.push(newDoc);
-    }
-
-    if (createdDocs.length === 0) {
-      res.status(400).json({
-        error: `Gosti faayilaa (${rejectedNames.join(', ')}) hin deeggaramu. Maaloo .pdf, .txt, .md, .csv, ykn .json ol-kaa’i.`,
+  app.post(
+    '/api/admin/documents/upload',
+    (req: Request, res: Response, next: express.NextFunction) => {
+      upload.array('files', 10)(req, res, (err: unknown) => {
+        if (err) {
+          const msg =
+            err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+              ? 'Faayilli garmalee guddaa dha (daangaan 30MB dha).'
+              : err instanceof Error
+                ? err.message
+                : 'Faayila ol-kaa’uun hin danda’amne.';
+          res.status(400).json({ error: msg });
+          return;
+        }
+        next();
       });
-      return;
-    }
+    },
+    async (req: Request, res: Response) => {
+      const store = loadStore();
+      const user = getAuthenticatedUser(req, store);
+      const files = (req.files as Express.Multer.File[]) || [];
 
-    saveStore(store);
-    res.status(201).json({
-      documents: createdDocs,
-      rejected: rejectedNames,
-    });
-  });
+      const cleanupFiles = (list: Express.Multer.File[]) => {
+        for (const f of list) {
+          if (f.path && fs.existsSync(f.path)) {
+            try {
+              fs.unlinkSync(f.path);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      };
+
+      if (!user || user.role !== 'admin') {
+        cleanupFiles(files);
+        res.status(403).json({ error: 'Aangoon Admin barbaachisaa dha.' });
+        return;
+      }
+
+      if (files.length === 0) {
+        res.status(400).json({ error: 'Faayilli hin filatamne.' });
+        return;
+      }
+
+      const allowedExts = ['.txt', '.md', '.csv', '.json', '.pdf', '.html'];
+      const baseTitle = ((req.body.title as string) || '').trim();
+      const category = ((req.body.category as string) || '').trim() || 'Barnoota Waliigalaa';
+      let nextOrder = Number(req.body.order) || store.documents.length + 1;
+
+      const createdDocs: StudyDocument[] = [];
+      const rejectedNames: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (!allowedExts.includes(ext)) {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          rejectedNames.push(file.originalname);
+          continue;
+        }
+
+        const title =
+          files.length === 1 && baseTitle
+            ? baseTitle
+            : path.basename(file.originalname, ext).replace(/[_-]+/g, ' ');
+
+        let textContent = '';
+        let summary = '';
+        let storedFilePath: string | undefined;
+        const mimeType =
+          ext === '.pdf'
+            ? 'application/pdf'
+            : ext === '.md'
+              ? 'text/markdown'
+              : 'text/plain';
+
+        if (ext !== '.pdf') {
+          textContent = readUploadedTextFile(file.path);
+          summary = textContent.replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+          if (summary.length === 180) summary += '...';
+          try {
+            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          } catch {
+            // ignore
+          }
+        } else {
+          const pdfBytes = fs.readFileSync(file.path);
+          if (pdfBytes.length <= MAX_INLINE_PDF_BYTES) {
+            storedFilePath = `${PDF_DATA_URI_PREFIX}${pdfBytes.toString('base64')}`;
+            try {
+              if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+            } catch {
+              // ignore
+            }
+          } else {
+            storedFilePath = file.path;
+          }
+          summary = `Faayila PDF: ${file.originalname} — Chatbotiin qabiyyee PDF kanaa kallattiin dubbisuu danda’a.`;
+        }
+
+        const now = new Date().toISOString();
+        const newDoc: StudyDocument = {
+          id: `doc-${crypto.randomUUID().slice(0, 8)}`,
+          order: nextOrder++,
+          title,
+          category,
+          fileName: file.originalname,
+          mimeType,
+          sizeBytes: file.size,
+          sourceType: 'upload',
+          active: true,
+          summary: summary || title,
+          textContent,
+          storedFilePath,
+          createdAt: now,
+          updatedAt: now,
+        };
+        store.documents.push(newDoc);
+        createdDocs.push(newDoc);
+      }
+
+      if (createdDocs.length === 0) {
+        res.status(400).json({
+          error: `Gosti faayilaa (${rejectedNames.join(', ')}) hin deeggaramu. Maaloo .pdf, .txt, .md, .csv, ykn .json ol-kaa’i.`,
+        });
+        return;
+      }
+
+      saveStore(store);
+      await flushDbSync(15000);
+
+      if ((supabasePgPool || supabaseRestConfig) && lastSupabaseSyncStatus !== 'ok') {
+        const createdIds = new Set(createdDocs.map((d) => d.id));
+        store.documents = store.documents.filter((d) => !createdIds.has(d.id));
+        cachedStore = store;
+        ensureDataDirs();
+        fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+        res.status(500).json({
+          error:
+            lastSupabaseSyncStatus === 'rls_blocked'
+              ? 'Supabase Row-Level Security (RLS) kitaaba save gochuu dhorkeera.'
+              : 'Kitaaba gara database Supabase save gochuun hin milkoofne. Maaloo irra deebi’ii yaali.',
+        });
+        return;
+      }
+
+      res.status(201).json({
+        documents: createdDocs.map(sanitizeDocumentForClient),
+        rejected: rejectedNames,
+      });
+    }
+  );
 
   // Admin: upload a file specifically for Chatbot Instructions / Behavior in Settings
-  app.post('/api/admin/settings/instructions-file', upload.single('file'), (req: Request, res: Response) => {
-    const store = loadStore();
-    const user = getAuthenticatedUser(req, store);
-    if (!user || user.role !== 'admin') {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      res.status(403).json({ error: 'Aangoon Admin barbaachisaa dha.' });
-      return;
-    }
-
-    const file = req.file;
-    if (!file) {
-      res.status(400).json({ error: 'Faayilli qajeelfamaa hin filatamne.' });
-      return;
-    }
-
-    const ext = path.extname(file.originalname).toLowerCase();
-    const allowedExts = ['.txt', '.md', '.csv', '.json', '.pdf'];
-    if (!allowedExts.includes(ext)) {
-      fs.unlinkSync(file.path);
-      res.status(400).json({
-        error: 'Faayilli qajeelfama Chatbot .pdf, .txt, .md, .csv, ykn .json ta’uu qaba.',
-      });
-      return;
-    }
-
-    if (ext === '.pdf') {
-      if (store.settings.instructionPdfPath && fs.existsSync(store.settings.instructionPdfPath)) {
-        try {
-          fs.unlinkSync(store.settings.instructionPdfPath);
-        } catch {
-          // ignore
+  app.post(
+    '/api/admin/settings/instructions-file',
+    (req: Request, res: Response, next: express.NextFunction) => {
+      upload.single('file')(req, res, (err: unknown) => {
+        if (err) {
+          const msg =
+            err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+              ? 'Faayilli garmalee guddaa dha (daangaan 30MB dha).'
+              : err instanceof Error
+                ? err.message
+                : 'Faayila qajeelfamaa ol-kaa’uun hin danda’amne.';
+          res.status(400).json({ error: msg });
+          return;
         }
+        next();
+      });
+    },
+    async (req: Request, res: Response) => {
+      const store = loadStore();
+      const user = getAuthenticatedUser(req, store);
+      if (!user || user.role !== 'admin') {
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(403).json({ error: 'Aangoon Admin barbaachisaa dha.' });
+        return;
       }
-      store.settings.instructionPdfPath = file.path;
-      store.settings.instructionFileName = file.originalname;
-    } else {
-      const content = fs.readFileSync(file.path, 'utf8').trim();
-      fs.unlinkSync(file.path);
-      store.settings.systemInstructions = content.slice(0, 20000);
-      store.settings.instructionFileName = file.originalname;
-      store.settings.instructionPdfPath = undefined;
-    }
 
-    saveStore(store);
-    res.json({
-      settings: {
-        tutorName: store.settings.tutorName,
-        welcomeGreeting: store.settings.welcomeGreeting,
-        systemInstructions: store.settings.systemInstructions,
-        instructionFileName: store.settings.instructionFileName,
-        languageMode: store.settings.languageMode,
-        groundingMode: store.settings.groundingMode,
-      },
-    });
-  });
+      const file = req.file;
+      if (!file) {
+        res.status(400).json({ error: 'Faayilli qajeelfamaa hin filatamne.' });
+        return;
+      }
+
+      const ext = path.extname(file.originalname).toLowerCase();
+      const allowedExts = ['.txt', '.md', '.csv', '.json', '.pdf'];
+      if (!allowedExts.includes(ext)) {
+        fs.unlinkSync(file.path);
+        res.status(400).json({
+          error: 'Faayilli qajeelfama Chatbot .pdf, .txt, .md, .csv, ykn .json ta’uu qaba.',
+        });
+        return;
+      }
+
+      if (ext === '.pdf') {
+        if (
+          store.settings.instructionPdfPath &&
+          !store.settings.instructionPdfPath.startsWith('data:') &&
+          fs.existsSync(store.settings.instructionPdfPath)
+        ) {
+          try {
+            fs.unlinkSync(store.settings.instructionPdfPath);
+          } catch {
+            // ignore
+          }
+        }
+        const pdfBytes = fs.readFileSync(file.path);
+        if (pdfBytes.length <= MAX_INLINE_PDF_BYTES) {
+          store.settings.instructionPdfPath = `${PDF_DATA_URI_PREFIX}${pdfBytes.toString('base64')}`;
+          try {
+            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          } catch {
+            // ignore
+          }
+        } else {
+          store.settings.instructionPdfPath = file.path;
+        }
+        store.settings.instructionFileName = file.originalname;
+      } else {
+        const content = readUploadedTextFile(file.path).trim();
+        fs.unlinkSync(file.path);
+        store.settings.systemInstructions = content.slice(0, 20000);
+        store.settings.instructionFileName = file.originalname;
+        store.settings.instructionPdfPath = undefined;
+      }
+
+      saveStore(store);
+      await flushDbSync(10000);
+      res.json({
+        settings: {
+          tutorName: store.settings.tutorName,
+          welcomeGreeting: store.settings.welcomeGreeting,
+          systemInstructions: store.settings.systemInstructions,
+          instructionFileName: store.settings.instructionFileName,
+          languageMode: store.settings.languageMode,
+          groundingMode: store.settings.groundingMode,
+        },
+      });
+    }
+  );
 
   // Admin: create text lesson directly in Settings
-  app.post('/api/admin/documents/text', (req: Request, res: Response) => {
+  app.post('/api/admin/documents/text', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3347,7 +3534,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       return;
     }
 
-    const cleanText = content.trim();
+    const cleanText = content.replace(/\u0000/g, '').trim();
     const summaryRaw = cleanText.replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
     const now = new Date().toISOString();
 
@@ -3369,11 +3556,12 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
 
     store.documents.push(newDoc);
     saveStore(store);
-    res.status(201).json({ document: newDoc });
+    await flushDbSync(10000);
+    res.status(201).json({ document: sanitizeDocumentForClient(newDoc) });
   });
 
   // Admin: update document metadata / active status
-  app.patch('/api/admin/documents/:id', (req: Request, res: Response) => {
+  app.patch('/api/admin/documents/:id', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3393,19 +3581,20 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     if (typeof category === 'string' && category.trim()) doc.category = category.trim();
     if (typeof order === 'number' && !Number.isNaN(order)) doc.order = order;
     if (typeof textContent === 'string' && doc.mimeType !== 'application/pdf') {
-      doc.textContent = textContent;
-      doc.sizeBytes = Buffer.byteLength(textContent, 'utf8');
-      const s = textContent.replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+      doc.textContent = textContent.replace(/\u0000/g, '');
+      doc.sizeBytes = Buffer.byteLength(doc.textContent, 'utf8');
+      const s = doc.textContent.replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
       doc.summary = s.length === 180 ? `${s}...` : s;
     }
     doc.updatedAt = new Date().toISOString();
 
     saveStore(store);
-    res.json({ document: doc });
+    await flushDbSync(10000);
+    res.json({ document: sanitizeDocumentForClient(doc) });
   });
 
   // Admin: delete document
-  app.delete('/api/admin/documents/:id', (req: Request, res: Response) => {
+  app.delete('/api/admin/documents/:id', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3420,7 +3609,12 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     }
 
     const [removed] = store.documents.splice(idx, 1);
-    if (removed.storedFilePath && fs.existsSync(removed.storedFilePath)) {
+    syncedSupabaseDocSignatures.delete(removed.id);
+    if (
+      removed.storedFilePath &&
+      !removed.storedFilePath.startsWith('data:') &&
+      fs.existsSync(removed.storedFilePath)
+    ) {
       try {
         fs.unlinkSync(removed.storedFilePath);
       } catch {
@@ -3428,11 +3622,12 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       }
     }
     saveStore(store);
+    await flushDbSync(10000);
     res.json({ deleted: true });
   });
 
   // Admin: update settings
-  app.put('/api/admin/settings', (req: Request, res: Response) => {
+  app.put('/api/admin/settings', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3460,6 +3655,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     }
 
     saveStore(store);
+    await flushDbSync(5000);
     res.json({
       settings: {
         tutorName: store.settings.tutorName,
@@ -3595,7 +3791,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
   });
 
   // Admin: Import a book from the free Oromo & English Bible directly into study documents
-  app.post('/api/admin/bible/import-book', (req: Request, res: Response) => {
+  app.post('/api/admin/bible/import-book', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3637,8 +3833,9 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     }
     store.bibleSeeded = true;
     saveStore(store);
+    await flushDbSync(15000);
 
-    res.status(201).json({ document: created });
+    res.status(201).json({ document: sanitizeDocumentForClient(created) });
   });
 
   // Admin: Download a formatted .md Bible book file (Afaan Oromo, English, or Bilingual)
@@ -4052,13 +4249,24 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
   app.get('/api/documents/:id/file', (req: Request, res: Response) => {
     const store = loadStore();
     const doc = store.documents.find((d) => d.id === req.params.id);
-    if (!doc || !doc.storedFilePath || !fs.existsSync(doc.storedFilePath)) {
+    if (!doc) {
       res.status(404).json({ error: 'Faayilli hin argamne.' });
       return;
     }
-    res.setHeader('Content-Type', doc.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
-    fs.createReadStream(doc.storedFilePath).pipe(res);
+    const fileBuf = readStoredPdfBuffer(doc.storedFilePath);
+    if (fileBuf) {
+      res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+      res.send(fileBuf);
+      return;
+    }
+    if (doc.mimeType !== 'application/pdf' && doc.textContent) {
+      res.setHeader('Content-Type', `${doc.mimeType || 'text/plain'}; charset=utf-8`);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+      res.send(Buffer.from(doc.textContent, 'utf8'));
+      return;
+    }
+    res.status(404).json({ error: 'Faayilli hin argamne.' });
   });
 
   // Chat threads CRUD (scoped to authenticated user)

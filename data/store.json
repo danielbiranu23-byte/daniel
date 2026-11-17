@@ -4,8 +4,7 @@
     "welcomeGreeting": "Akkam jirtu! Ani gargaaraa kee Barnoota Macaafa Qulqulluu ti. Faayiloota Adminiin qopheesse irratti hundaa’uun boqonnaa jalqabaa hanga xummuraatti sin qajeelcha.",
     "systemInstructions": "Barnoota Macaafa Qulqulluu irratti barattoota waliin akka namaatti haasaa ho’aa fi ifaa ta’e taasisi. Odeeffannoo sirrii fi qulqulluu qofa kenni; maqaa faayilaa irra deddeebitee hin waamin.",
     "languageMode": "om",
-    "groundingMode": "strict_files",
-    "adminPin": "1234"
+    "groundingMode": "strict_files"
   },
   "documents": [
     {
@@ -132,6 +131,35 @@
       "updatedAt": "2026-11-16T13:49:27.991Z"
     },
     {
+      "id": "chat-bc3fa2e0",
+      "userId": "user-17b814bf",
+      "title": "Akkam! Waa’ee Barnoota Macaafa Qulqulluu har’aa ",
+      "focusDocId": "all",
+      "messages": [
+        {
+          "id": "msg-bfa76340",
+          "role": "user",
+          "content": "Akkam! Waa’ee Barnoota Macaafa Qulqulluu har’aa naaf ibsi.",
+          "createdAt": "2026-11-17T16:22:16.773Z"
+        },
+        {
+          "id": "msg-fae63c67",
+          "role": "assistant",
+          "content": "Kunoo sagalee Macaafa Qulqulluu Afaan Oromo fi English dhaan:\n\nBaʼuu (Exodus) 2:3\n- Afaan Oromo: Kana caalaa isa dhoksuu akka hin dandeenye yeroo beektetti garuu guuboo dhallaadduu irraa hojjetame tokko fuutee haphee fi leelee itti dhoobde; mucaa sana guuboo keessa ciibsitee qarqara laga Abbayyaa shambaqqoo keessa keesse.\n- English: When she could no longer hide him, she took a papyrus basket for him, and coated it with tar and with pitch. She put the child in it, and laid it in the reeds by the river’s bank.\n\nKeessa Deebii (Deuteronomy) 25:4\n- Afaan Oromo: Qotiyyoo midhaan siribsiisuutti jiru afaan hin hidhin.\n- English: You shall not muzzle the ox when he treads out the grain.\n\nKeessa Deebii (Deuteronomy) 27:8\n- Afaan Oromo: Dhagoota irratti dubbiiwwan seera kanaa hunda ibsii barreessi.”\n- English: You shall write on the stones all the words of this law very plainly.”\n\n1 Saamuʼeel (1 Samuel) 19:13\n- Afaan Oromo: Ergasii Miikaal fakkii Waaqa tolfamaa tokko fuutee wayyaa itti uffiftee siree irra ciibsite; boraatii rifeensa reʼees mataa jala keesseef.\n- English: Michal took the teraphim and laid it in the bed, and put a pillow of goats’ hair at its head and covered it with clothes.\n\n2 Mootota (2 Kings) 4:21\n- Afaan Oromo: Isheen ol baatee siree nama Waaqaa sanaa irra isa ciibsite; mana itti cuftees kaatee biraa deemte.\n- English: She went up and laid him on the man of God’s bed, and shut the door on him, and went out.\n\nFaarfannaa (Psalms) 18:28\n- Afaan Oromo: Yaa Waaqayyo ati ibsaa koo jabeessitee ni ibsita; Waaqni koo dukkana koo ifatti ni geeddara.\n- English: For you will light my lamp, LORD. My God will light up my darkness.\n\nFaarfannaa (Psalms) 22:15\n- Afaan Oromo: Jabinni koo akka qiraacii goge; arrabni koo laagaatti na maxxane; awwaara duʼaa keessas na ciibsite.\n- English: My strength is dried up like a potsherd. My tongue sticks to the roof of my mouth. You have brought me into the dust of death.\n\nFaarfannaa (Psalms) 80:3\n- Afaan Oromo: Yaa Waaqi, iddoo keenyatti nu deebisi; akka fayyinuufis fuula kee nurratti ibsi.\n- English: Turn us again, God. Cause your face to shine, and we will be saved.\n\nFaarfannaa (Psalms) 80:7\n- Afaan Oromo: Yaa Waaqa Waan Hunda Dandeessu,iddoo keenyatti nu deebisi; akka nu fayyinuufis fuula kee nurratti ibsi.\n- English: Turn us again, God of Armies. Cause your face to shine, and we will be saved.\n\nFaarfannaa (Psalms) 80:19\n- Afaan Oromo: Yaa Waaqayyo, Waaqa Waan Hunda Dandeessu iddoo keenyatti nu deebisi; akka nu fayyinuufis fuula kee nurratti ibsi.\n- English: Turn us again, LORD God of Armies. Cause your face to shine, and we will be saved.\n\n## 1. Maalummaa Macaafa Qulqulluu\nMacaafni Qulqulluun sagalee Waaqayyoo isa namoota qulqullootaan hafuura Waaqayyootiin geggeeffamanii barreeffameedha (2 Ximootewos 3:16). Kitaabota walitti qabaman **66** irraa ijaarame:\n- **Kakuu Moofaa (Old Testament)**: Kitaabota **39** of keessaa qaba. Seenaa uumamaa (Seera Uumamaa), seera Muusee, seenaa saba Israa'el, faarfannaa (Faarfannaa Daawit), fi raajota gurguddaa fi xixiqqoo qabata.\n- **Kakuu Haaraa (New Testament)**: Kitaabota **27** of keessaa qaba. Wangeelota arfan (Maatewos, Maarqos, Luqaas, Yohaannis), Hojii Ergamootaa, Xalayoota Phaawulosii fi ergamoota biroo, akkasumas Mul'ata Yohaannis qabata.\n\n**1.** Jalqabatti dubbiitu ture; dubbichis Waaqa wajjin ture; dubbiin sunis Waaqa ture.\n> *In the beginning was the Word, and the Word was with God, and the Word was God.*\n**2.** Innis jalqabatti Waaqa wajjin ture.\n> *The same was in the beginning with God.*\n**3.** Wanni hundinuu isaan taʼe; waan taʼe hunda keessaas wanni isa malee taʼe tokko iyyuu hin jiru.\n> *All things were made through him. Without him, nothing was made that has been made.*\n**4.** Jireenyi isa keessa ture; jireenyi sunis ifa namootaa ture.\n> *In him was life, and the life was the light of men.*\n**5.** Ifni sun dukkana keessatti ni ibsa; dukkanni garuu isa hin moʼanne.\n> *The light shines in the darkness, and the darkness hasn’t overcome it.*\n**6.** Nama Waaqa biraa ergame kan maqaan isaa Yohannis jedhamu tokkotu ture.\n> *There came a man sent from God, whose name was John.*\n**7.** Innis akka namni hundinuu karaa isaa\n\n**1.** Yeroo xinnoo booddee ayyaana Yihuudootaa tokkotu ture; Yesuusis Yerusaalemitti ol baʼe.\n> *After these things, there was a feast of the Jews, and Jesus went up to Jerusalem.*\n**2.** Yerusaalem keessa Karra Hoolaa bira haroo afaan Ibraayisxiitiin Beetizaataa jedhamu tokkotu jira; haroon sun gardaafoo shan qaba.\n> *Now in Jerusalem by the sheep gate, there is a pool, which is called in Hebrew, “Bethesda”, having five porches.*\n**3.** Gardaafoowwan sana keessas namoonni dhukkubsatan, jechuunis jaamonni, warri naafatanii fi warri dhagni irratti duʼe baayʼeen ciisanii raafama bishaanii eeggachaa turan. [\n> *In these lay a great multitude of those who were sick, blind, lame, or paralyzed, waiting for the moving of the water;*\n**4.** Ergamaan Gooftaa yeroo yerootti gad buʼee bishaanicha ni raasa ture; raafama bishaanichaa booddee namni jalqabatti bishaan sana keessa seenu kam iyyuu dhukk",
+          "sources": [
+            "Boqonnaa 1: Seensa Macaafa Qulqulluu fi Kakuu Moofaa",
+            "Boqonnaa 2: Wangeelaa fi Ergaa Kakuu Haaraa",
+            "Boqonnaa 3: Kadhannaa, Amantii fi Jireenya Guyyaa Guyyaa",
+            "Macaafa Qulqulluu: Yohannis (John) — Oromo & English",
+            "Macaafa Qulqulluu: Uumama (Afaan Oromo)"
+          ],
+          "createdAt": "2026-11-17T16:22:17.580Z"
+        }
+      ],
+      "createdAt": "2026-11-17T16:22:16.773Z",
+      "updatedAt": "2026-11-17T16:22:17.580Z"
+    },
+    {
       "id": "chat-7da96b88",
       "userId": "user-student-default",
       "title": "Yohn 14:6 Afaan Oromo fi English dhaan naaf kenn",
@@ -194,6 +222,32 @@
   },
   "users": [
     {
+      "id": "user-student-default",
+      "username": "barataa",
+      "fullName": "Barataa Macaafaa",
+      "role": "user",
+      "passwordHash": "b3842f30e90d0b4a959213ec7658c318:ddec125a92d98be115bbc123605abc396c00734d7ceb185d3e30ae42d6c5b6e7cc4f93d4664af1be2f31c4ef0312f1fc1f56f1dd30a09f3cfcaa76a966a8e70d",
+      "progress": {
+        "completedDocIds": [],
+        "quizScores": {}
+      },
+      "highlights": [],
+      "createdAt": "2026-11-15T17:22:11.525Z"
+    },
+    {
+      "id": "user-17b814bf",
+      "username": "abdisa",
+      "fullName": "Abdisa",
+      "role": "user",
+      "passwordHash": "d0a098e8f539186e465343aee2e3cec7:9639d05f84cd280ebbf7c4011c57971dba773fa3d4f3d53a060bb47444f9a26e5323f0c8cd711144fe162f413ae414dfa6b22f4be6c71b7ca7d1e83dcbca3b7b",
+      "progress": {
+        "completedDocIds": [],
+        "quizScores": {}
+      },
+      "highlights": [],
+      "createdAt": "2026-11-17T16:21:56.041Z"
+    },
+    {
       "id": "user-admin-default",
       "username": "admin",
       "fullName": "Admin Giddugalaa",
@@ -203,7 +257,6 @@
         "completedDocIds": [],
         "quizScores": {}
       },
-      "createdAt": "2026-11-15T17:22:11.525Z",
       "highlights": [
         {
           "id": "LUK:1:2",
@@ -229,20 +282,8 @@
           "color": "yellow",
           "savedAt": "2026-11-16T13:51:31.405Z"
         }
-      ]
-    },
-    {
-      "id": "user-student-default",
-      "username": "barataa",
-      "fullName": "Barataa Macaafaa",
-      "role": "user",
-      "passwordHash": "b3842f30e90d0b4a959213ec7658c318:ddec125a92d98be115bbc123605abc396c00734d7ceb185d3e30ae42d6c5b6e7cc4f93d4664af1be2f31c4ef0312f1fc1f56f1dd30a09f3cfcaa76a966a8e70d",
-      "progress": {
-        "completedDocIds": [],
-        "quizScores": {}
-      },
-      "createdAt": "2026-11-15T17:22:11.525Z",
-      "highlights": []
+      ],
+      "createdAt": "2026-11-15T17:22:11.525Z"
     }
   ],
   "sessions": {
@@ -309,6 +350,18 @@
     "2ecb8d15798bf0da3c2e97255cf788438a51be2d63ea1c6ce021b6098c7b2586": {
       "userId": "user-admin-default",
       "createdAt": "2026-11-17T13:37:56.306Z"
+    },
+    "qm1.eyJ1aWQiOiJ1c2VyLWFkbWluLWRlZmF1bHQiLCJ1c2VybmFtZSI6ImFkbWluIiwiZnVsbE5hbWUiOiJBZG1pbiBHaWRkdWdhbGFhIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzk3NTI0NTkxMDQ0fQ.s4FqxSzUydrfCTMf75VLePla1wnCLwXytiZ7VeyVVRM": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T16:23:11.046Z"
+    },
+    "qm1.eyJ1aWQiOiJ1c2VyLWFkbWluLWRlZmF1bHQiLCJ1c2VybmFtZSI6ImFkbWluIiwiZnVsbE5hbWUiOiJBZG1pbiBHaWRkdWdhbGFhIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzk3NTI1MTk0NDEzfQ.Hm7tYZRZQXh1t9EVAl6k8TWTqooGmk8fXcnUZDSmIEE": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T16:33:14.413Z"
+    },
+    "qm1.eyJ1aWQiOiJ1c2VyLWFkbWluLWRlZmF1bHQiLCJ1c2VybmFtZSI6ImFkbWluIiwiZnVsbE5hbWUiOiJBZG1pbiBHaWRkdWdhbGFhIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzk3NTI1MjUxMjgxfQ.kLV8PqsoLTC6Lg0sftkaQta9t0jJuO0T80vhlLkKGuQ": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T16:34:11.282Z"
     }
   },
   "bibleSeeded": true
