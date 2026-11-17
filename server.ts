@@ -905,6 +905,7 @@ let supabaseStatus:
   | 'connected_rest'
   | 'invalid_config'
   | 'tables_missing'
+  | 'rls_blocked'
   | 'connection_failed' = 'not_configured';
 
 function cloneStore(store: StoreData): StoreData {
@@ -1953,52 +1954,77 @@ async function supabaseRestFetch(
   });
 }
 
-async function syncStoreToSupabaseRest(snapshot: StoreData): Promise<void> {
-  if (!supabaseRestConfig) return;
+async function syncStoreToSupabaseRest(
+  snapshot: StoreData
+): Promise<'ok' | 'rls_blocked' | 'error'> {
+  if (!supabaseRestConfig) return 'error';
   const cfg = supabaseRestConfig;
   const now = new Date().toISOString();
+  let rlsBlocked = false;
+  let hadError = false;
   try {
-    await supabaseRestFetch(cfg, 'app_settings?on_conflict=id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify([
-        {
-          id: 'global',
-          tutor_name: snapshot.settings.tutorName,
-          welcome_greeting: snapshot.settings.welcomeGreeting,
-          system_instructions: snapshot.settings.systemInstructions,
-          instruction_file_name: snapshot.settings.instructionFileName ?? null,
-          instruction_pdf_path: snapshot.settings.instructionPdfPath ?? null,
-          language_mode: snapshot.settings.languageMode,
-          grounding_mode: snapshot.settings.groundingMode,
-          updated_at: now,
-        },
-      ]),
-    });
+    const assertRestOk = async (label: string, resp: globalThis.Response): Promise<void> => {
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        if (resp.status === 401 || resp.status === 403 || /42501|row-level security/i.test(body)) {
+          rlsBlocked = true;
+        } else {
+          hadError = true;
+        }
+        console.error(`Supabase REST ${label} error (${resp.status}):`, body);
+      }
+    };
 
-    if (snapshot.documents.length > 0) {
-      await supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
+    await assertRestOk(
+      'app_settings',
+      await supabaseRestFetch(cfg, 'app_settings?on_conflict=id', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify(
-          snapshot.documents.map((d) => ({
-            id: d.id,
-            sort_order: d.order,
-            title: d.title,
-            category: d.category,
-            file_name: d.fileName,
-            mime_type: d.mimeType,
-            size_bytes: d.sizeBytes,
-            source_type: d.sourceType,
-            active: Boolean(d.active),
-            summary: d.summary || '',
-            text_content: d.textContent || '',
-            stored_file_path: d.storedFilePath ?? null,
-            created_at: d.createdAt,
-            updated_at: d.updatedAt,
-          }))
-        ),
-      });
+        body: JSON.stringify([
+          {
+            id: 'global',
+            tutor_name: snapshot.settings.tutorName,
+            welcome_greeting: snapshot.settings.welcomeGreeting,
+            system_instructions: snapshot.settings.systemInstructions,
+            instruction_file_name: snapshot.settings.instructionFileName ?? null,
+            instruction_pdf_path: snapshot.settings.instructionPdfPath ?? null,
+            language_mode: snapshot.settings.languageMode,
+            grounding_mode: snapshot.settings.groundingMode,
+            updated_at: now,
+          },
+        ]),
+      })
+    );
+    if (rlsBlocked) {
+      return 'rls_blocked';
+    }
+
+    if (snapshot.documents.length > 0) {
+      await assertRestOk(
+        'study_documents',
+        await supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            snapshot.documents.map((d) => ({
+              id: d.id,
+              sort_order: d.order,
+              title: d.title,
+              category: d.category,
+              file_name: d.fileName,
+              mime_type: d.mimeType,
+              size_bytes: d.sizeBytes,
+              source_type: d.sourceType,
+              active: Boolean(d.active),
+              summary: d.summary || '',
+              text_content: d.textContent || '',
+              stored_file_path: d.storedFilePath ?? null,
+              created_at: d.createdAt,
+              updated_at: d.updatedAt,
+            }))
+          ),
+        })
+      );
     }
     const existingDocsResp = await supabaseRestFetch(cfg, 'study_documents?select=id');
     if (existingDocsResp.ok) {
@@ -2014,40 +2040,46 @@ async function syncStoreToSupabaseRest(snapshot: StoreData): Promise<void> {
     }
 
     if (snapshot.users.length > 0) {
-      await supabaseRestFetch(cfg, 'users?on_conflict=id', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify(
-          snapshot.users.map((u) => ({
-            id: u.id,
-            username: u.username,
-            full_name: u.fullName,
-            role: u.role,
-            password_hash: u.passwordHash,
-            progress_json: JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
-            highlights_json: JSON.stringify(u.highlights ?? []),
-            created_at: u.createdAt,
-          }))
-        ),
-      });
+      await assertRestOk(
+        'users',
+        await supabaseRestFetch(cfg, 'users?on_conflict=id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            snapshot.users.map((u) => ({
+              id: u.id,
+              username: u.username,
+              full_name: u.fullName,
+              role: u.role,
+              password_hash: u.passwordHash,
+              progress_json: JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
+              highlights_json: JSON.stringify(u.highlights ?? []),
+              created_at: u.createdAt,
+            }))
+          ),
+        })
+      );
     }
 
     if (snapshot.chats.length > 0) {
-      await supabaseRestFetch(cfg, 'chat_threads?on_conflict=id', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify(
-          snapshot.chats.map((c) => ({
-            id: c.id,
-            user_id: c.userId,
-            title: c.title,
-            focus_doc_id: c.focusDocId,
-            messages_json: JSON.stringify(c.messages ?? []),
-            created_at: c.createdAt,
-            updated_at: c.updatedAt,
-          }))
-        ),
-      });
+      await assertRestOk(
+        'chat_threads',
+        await supabaseRestFetch(cfg, 'chat_threads?on_conflict=id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            snapshot.chats.map((c) => ({
+              id: c.id,
+              user_id: c.userId,
+              title: c.title,
+              focus_doc_id: c.focusDocId,
+              messages_json: JSON.stringify(c.messages ?? []),
+              created_at: c.createdAt,
+              updated_at: c.updatedAt,
+            }))
+          ),
+        })
+      );
     }
     const existingChatsResp = await supabaseRestFetch(cfg, 'chat_threads?select=id');
     if (existingChatsResp.ok) {
@@ -2064,34 +2096,69 @@ async function syncStoreToSupabaseRest(snapshot: StoreData): Promise<void> {
 
     const sessionEntries = Object.entries(snapshot.sessions || {});
     if (sessionEntries.length > 0) {
-      await supabaseRestFetch(cfg, 'sessions?on_conflict=token', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify(
-          sessionEntries.map(([token, rec]) => ({
-            token,
-            user_id: rec.userId,
-            created_at: rec.createdAt,
-          }))
-        ),
-      });
+      await assertRestOk(
+        'sessions',
+        await supabaseRestFetch(cfg, 'sessions?on_conflict=token', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            sessionEntries.map(([token, rec]) => ({
+              token,
+              user_id: rec.userId,
+              created_at: rec.createdAt,
+            }))
+          ),
+        })
+      );
+    }
+    const existingSessionsResp = await supabaseRestFetch(cfg, 'sessions?select=token');
+    if (existingSessionsResp.ok) {
+      const existingSessions = (await existingSessionsResp.json()) as Array<{ token: string }>;
+      const keepTokens = new Set(Object.keys(snapshot.sessions || {}));
+      for (const row of existingSessions) {
+        if (!keepTokens.has(row.token)) {
+          await supabaseRestFetch(cfg, `sessions?token=eq.${encodeURIComponent(row.token)}`, {
+            method: 'DELETE',
+          });
+        }
+      }
     }
 
-    await supabaseRestFetch(cfg, 'app_meta?on_conflict=id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify([
-        {
-          id: 'store_meta',
-          progress_json: JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
-          bible_seeded: Boolean(snapshot.bibleSeeded),
-          updated_at: now,
-        },
-      ]),
-    });
+    await assertRestOk(
+      'app_meta',
+      await supabaseRestFetch(cfg, 'app_meta?on_conflict=id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([
+          {
+            id: 'store_meta',
+            progress_json: JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
+            bible_seeded: Boolean(snapshot.bibleSeeded),
+            updated_at: now,
+          },
+        ]),
+      })
+    );
+    return rlsBlocked ? 'rls_blocked' : hadError ? 'error' : 'ok';
   } catch (err) {
     console.error('Supabase REST sync error:', err instanceof Error ? err.message : err);
+    return 'error';
   }
+}
+
+function loadSupabaseFileConfig(): { url?: string; publishableKey?: string } {
+  try {
+    const cfgPath = resolveProjectFile('supabase-config.json');
+    if (fs.existsSync(cfgPath)) {
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as {
+        url?: string;
+        publishableKey?: string;
+      };
+    }
+  } catch {
+    // Ignore malformed optional config file
+  }
+  return {};
 }
 
 async function initSupabaseStore(): Promise<void> {
@@ -2103,10 +2170,19 @@ async function initSupabaseStore(): Promise<void> {
     (/^\s*postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || '') ? process.env.DATABASE_URL || '' : '');
   const pgUrl = normalizePostgresUrl(rawPgUrl);
 
-  const restUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  const fileCfg = loadSupabaseFileConfig();
+  const restUrl = (
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    fileCfg.url ||
+    ''
+  ).trim();
   const serviceKey = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SECRET_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    fileCfg.publishableKey ||
     ''
   ).trim();
 
@@ -2212,15 +2288,28 @@ async function initSupabaseStore(): Promise<void> {
         ]);
 
       supabaseRestConfig = cfg;
-      supabaseStatus = 'connected_rest';
-      console.log('Supabase REST API connected');
-
       if (usersRows.length === 0 && docsRows.length === 0 && settingsRows.length === 0) {
         const seedStore = loadStore();
-        await syncStoreToSupabaseRest(seedStore);
+        const seedResult = await syncStoreToSupabaseRest(seedStore);
+        if (seedResult === 'rls_blocked') {
+          supabaseStatus = 'rls_blocked';
+          supabaseRestConfig = null;
+          console.warn(
+            'Supabase REST blocked by Row-Level Security (use SUPABASE_SERVICE_ROLE_KEY or disable RLS / add policy).'
+          );
+          return;
+        }
+        if (seedResult === 'error') {
+          supabaseStatus = 'connection_failed';
+          supabaseRestConfig = null;
+          return;
+        }
+        supabaseStatus = 'connected_rest';
         console.log('Seeded initial Qajeelcha Macaafaa data into Supabase REST');
         return;
       }
+      supabaseStatus = 'connected_rest';
+      console.log('Supabase REST API connected');
 
       const hydrated = hydrateStoreFromSqlRows(
         settingsRows,
@@ -2257,7 +2346,9 @@ function queueExternalDbSync(store: StoreData): void {
       });
   } else if (supabaseRestConfig) {
     supabaseSyncChain = supabaseSyncChain
-      .then(() => syncStoreToSupabaseRest(snapshot))
+      .then(async () => {
+        await syncStoreToSupabaseRest(snapshot);
+      })
       .catch((err) => {
         console.error('Supabase REST sync queue error:', err);
       });

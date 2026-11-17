@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.mjs": {
-      "includeFiles": "{data/bible/**,firebase-applet-config.json}",
+      "includeFiles": "{data/bible/**,firebase-applet-config.json,supabase-config.json}",
       "maxDuration": 60
     }
   },
