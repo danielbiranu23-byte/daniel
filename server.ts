@@ -137,20 +137,38 @@ const DATA_DIR = IS_VERCEL
   ? path.join('/tmp', 'qajeelcha_data')
   : path.resolve(process.cwd(), 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+function resolveProjectFile(...segments: string[]): string {
+  const candidates = [
+    path.resolve(process.cwd(), ...segments),
+    path.resolve(import.meta.dirname || process.cwd(), ...segments),
+    path.resolve(import.meta.dirname || process.cwd(), '..', ...segments),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
 const BIBLE_DIR = path.resolve(process.cwd(), 'data', 'bible');
 const OROMO_BIBLE_PATH = path.join(BIBLE_DIR, 'gaz_bib.json');
 const ENGLISH_BIBLE_PATH = path.join(BIBLE_DIR, 'eng_webp.json');
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 
-try {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  if (!IS_VERCEL) {
-    fs.mkdirSync(BIBLE_DIR, { recursive: true });
+function ensureDataDirs(): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    if (!IS_VERCEL) {
+      fs.mkdirSync(BIBLE_DIR, { recursive: true });
+    }
+  } catch (dirErr) {
+    console.warn('Directory initialization warning:', dirErr instanceof Error ? dirErr.message : dirErr);
   }
-} catch (dirErr) {
-  console.warn('Directory initialization warning:', dirErr instanceof Error ? dirErr.message : dirErr);
 }
+
+ensureDataDirs();
 
 let cachedBibleDatasets: { om: BibleDataset | null; en: BibleDataset | null } | null = null;
 
@@ -160,16 +178,18 @@ function loadBibleDatasets(): { om: BibleDataset | null; en: BibleDataset | null
   }
   let om: BibleDataset | null = null;
   let en: BibleDataset | null = null;
+  const omPath = resolveProjectFile('data', 'bible', 'gaz_bib.json');
+  const enPath = resolveProjectFile('data', 'bible', 'eng_webp.json');
   try {
-    if (fs.existsSync(OROMO_BIBLE_PATH)) {
-      om = JSON.parse(fs.readFileSync(OROMO_BIBLE_PATH, 'utf8')) as BibleDataset;
+    if (fs.existsSync(omPath)) {
+      om = JSON.parse(fs.readFileSync(omPath, 'utf8')) as BibleDataset;
     }
   } catch {
     om = null;
   }
   try {
-    if (fs.existsSync(ENGLISH_BIBLE_PATH)) {
-      en = JSON.parse(fs.readFileSync(ENGLISH_BIBLE_PATH, 'utf8')) as BibleDataset;
+    if (fs.existsSync(enPath)) {
+      en = JSON.parse(fs.readFileSync(enPath, 'utf8')) as BibleDataset;
     }
   } catch {
     en = null;
@@ -672,6 +692,7 @@ function createBibleStudyDocument(
   const langSuffix = language === 'bilingual' ? 'Oromo & English' : language === 'om' ? 'Afaan Oromo' : 'English';
   const baseName = `${upperId.toLowerCase()}_${language}_bible.md`;
   const savedFilePath = path.join(UPLOADS_DIR, baseName);
+  ensureDataDirs();
   fs.writeFileSync(savedFilePath, markdown, 'utf8');
 
   const now = new Date().toISOString();
@@ -1021,7 +1042,7 @@ async function initMongoStore(): Promise<void> {
   const dbName = (process.env.MONGODB_DB_NAME || 'qajeelcha_macaafaa').trim() || 'qajeelcha_macaafaa';
 
   try {
-    mongoClient = new MongoClient(uri, { serverSelectionTimeoutMS: 8000 });
+    mongoClient = new MongoClient(uri, { serverSelectionTimeoutMS: 4000 });
     await mongoClient.connect();
     mongoDb = mongoClient.db(dbName);
     await mongoDb.command({ ping: 1 });
@@ -1092,6 +1113,7 @@ async function initMongoStore(): Promise<void> {
     }
 
     cachedStore = hydrated;
+    ensureDataDirs();
     fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
   } catch (err) {
     mongoStatus = 'connection_failed';
@@ -1111,6 +1133,7 @@ function loadStore(): StoreData {
   if (cachedStore) {
     return cachedStore;
   }
+  ensureDataDirs();
   if (!fs.existsSync(STORE_PATH)) {
     const initial = createStarterStore();
     fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), 'utf8');
@@ -1155,6 +1178,7 @@ function loadStore(): StoreData {
     return store;
   } catch {
     const initial = createStarterStore();
+    ensureDataDirs();
     fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), 'utf8');
     cachedStore = initial;
     return initial;
@@ -1163,6 +1187,7 @@ function loadStore(): StoreData {
 
 function saveStore(store: StoreData): void {
   cachedStore = store;
+  ensureDataDirs();
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
   queueMongoSync(store);
 }
@@ -1207,13 +1232,106 @@ const upload = multer({
   },
 });
 
+let cachedAuthSecret: string | null = null;
+
+function getAuthTokenSecret(): string {
+  if (cachedAuthSecret) return cachedAuthSecret;
+  if (process.env.AUTH_SECRET?.trim()) {
+    cachedAuthSecret = process.env.AUTH_SECRET.trim();
+    return cachedAuthSecret;
+  }
+  let seed = 'qajeelcha-macaafaa-default-signing-seed';
+  try {
+    const fbPath = resolveProjectFile('firebase-applet-config.json');
+    if (fs.existsSync(fbPath)) {
+      const cfg = JSON.parse(fs.readFileSync(fbPath, 'utf8')) as {
+        projectId?: string;
+        apiKey?: string;
+      };
+      seed = `${cfg.projectId || ''}:${cfg.apiKey || ''}:qajeelcha-macaafaa-v1`;
+    }
+  } catch {
+    // Keep fallback seed
+  }
+  cachedAuthSecret = crypto.createHash('sha256').update(seed).digest('hex');
+  return cachedAuthSecret;
+}
+
+interface SignedTokenPayload {
+  uid: string;
+  username: string;
+  fullName: string;
+  role: 'admin' | 'user';
+  exp: number;
+}
+
+function issueAuthToken(user: UserAccount): string {
+  const payload: SignedTokenPayload = {
+    uid: user.id,
+    username: user.username,
+    fullName: user.fullName,
+    role: user.role,
+    exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getAuthTokenSecret())
+    .update(encoded)
+    .digest('base64url');
+  return `qm1.${encoded}.${sig}`;
+}
+
+function verifyStatelessAuthToken(token: string): SignedTokenPayload | null {
+  if (!token.startsWith('qm1.')) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [, encoded, sig] = parts;
+  if (!encoded || !sig) return null;
+  const expectedSig = crypto
+    .createHmac('sha256', getAuthTokenSecret())
+    .update(encoded)
+    .digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SignedTokenPayload;
+    if (!parsed?.uid || typeof parsed.exp !== 'number' || parsed.exp < Date.now()) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function getAuthenticatedUser(req: Request, store: StoreData): UserAccount | null {
   const authHeader = req.header('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   if (!token) return null;
   const session = store.sessions[token];
-  if (!session) return null;
-  return store.users.find((u) => u.id === session.userId) || null;
+  if (session) {
+    const found = store.users.find((u) => u.id === session.userId);
+    if (found) return found;
+  }
+  const signed = verifyStatelessAuthToken(token);
+  if (!signed) return null;
+  let user = store.users.find((u) => u.id === signed.uid) || null;
+  if (!user) {
+    user = {
+      id: signed.uid,
+      username: signed.username || 'fayyadamaa',
+      fullName: signed.fullName || 'Fayyadamaa',
+      role: signed.role === 'admin' ? 'admin' : 'user',
+      passwordHash: '',
+      progress: { completedDocIds: [], quizScores: {} },
+      createdAt: new Date().toISOString(),
+    };
+    store.users.push(user);
+  }
+  return user;
 }
 
 function sanitizeUser(u: UserAccount) {
@@ -1350,7 +1468,7 @@ export async function createApp(): Promise<express.Express> {
       return;
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = issueAuthToken(user);
     store.sessions[token] = {
       userId: user.id,
       createdAt: new Date().toISOString(),
@@ -1372,7 +1490,7 @@ export async function createApp(): Promise<express.Express> {
       return;
     }
 
-    const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    const fbConfigPath = resolveProjectFile('firebase-applet-config.json');
     if (!fs.existsSync(fbConfigPath)) {
       res.status(500).json({ error: 'Firebase configuration hin argamne.' });
       return;
@@ -1470,7 +1588,7 @@ export async function createApp(): Promise<express.Express> {
         return;
       }
 
-      const token = crypto.randomBytes(32).toString('hex');
+      const token = issueAuthToken(user);
       store.sessions[token] = {
         userId: user.id,
         createdAt: new Date().toISOString(),
@@ -1526,7 +1644,7 @@ export async function createApp(): Promise<express.Express> {
     };
 
     store.users.push(newUser);
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = issueAuthToken(newUser);
     store.sessions[token] = {
       userId: newUser.id,
       createdAt: new Date().toISOString(),
@@ -2950,7 +3068,10 @@ export async function createApp(): Promise<express.Express> {
 
   if (!IS_VERCEL) {
     if (process.env.NODE_ENV !== 'production') {
-      const { createServer: createViteServer } = await import('vite');
+      const vitePkg = ['vi', 'te'].join('');
+      const { createServer: createViteServer } = (await import(
+        /* @vite-ignore */ vitePkg
+      )) as typeof import('vite');
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa',

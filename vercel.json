@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/index.ts": {
+    "api/index.mjs": {
       "includeFiles": "{data/bible/**,firebase-applet-config.json}",
       "maxDuration": 60
     }

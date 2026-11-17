@@ -91,6 +91,14 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
       const code = (err as { code?: string })?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         setError('Foddaan seenumsa Google cufameera. Irra deebi’ii yaali.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setError(
+          'Domain haaraan kun Firebase Console (Authentication → Settings → Authorized domains) keessatti dabalamuu qaba; yookiin username fi password dhaan seeni.'
+        );
+      } else if (code === 'auth/popup-blocked') {
+        setError(
+          'Browseriin kee popup Google cufeera. Maaloo popup hayyami ykn username fi password dhaan seeni.'
+        );
       } else {
         setError(extractErrorMessage(err, 'Google waliin seenuun hin milkoofne.'));
       }

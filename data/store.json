@@ -88,6 +88,22 @@
   ],
   "chats": [
     {
+      "id": "chat-6c60a668",
+      "userId": "user-admin-default",
+      "title": "Akkam",
+      "focusDocId": "all",
+      "messages": [
+        {
+          "id": "msg-79321752",
+          "role": "user",
+          "content": "Akkam",
+          "createdAt": "2026-11-17T13:37:56.351Z"
+        }
+      ],
+      "createdAt": "2026-11-17T13:37:56.351Z",
+      "updatedAt": "2026-11-17T13:37:56.351Z"
+    },
+    {
       "id": "chat-47b30720",
       "userId": "user-admin-default",
       "title": "Wangeelli arfan maal irratti xiyyeeffatu?",
@@ -281,6 +297,18 @@
     "6c7ab2b27d01350223351c1e613aa4e79badf052e7983d07a14dc8ea2438ff2e": {
       "userId": "user-admin-default",
       "createdAt": "2026-11-16T17:10:12.983Z"
+    },
+    "460a5b11f214d70b46bef544ee66cb7466f2052d9d42a5ae3195f193e6955b05": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T13:36:59.427Z"
+    },
+    "8ee86c15889fa096bd734fc84f06fbb4d143a184aa5504ee6d24dce7feff93e7": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T13:37:35.869Z"
+    },
+    "2ecb8d15798bf0da3c2e97255cf788438a51be2d63ea1c6ce021b6098c7b2586": {
+      "userId": "user-admin-default",
+      "createdAt": "2026-11-17T13:37:56.306Z"
     }
   },
   "bibleSeeded": true
