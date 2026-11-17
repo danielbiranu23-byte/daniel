@@ -1000,6 +1000,14 @@ function queueMongoSync(store: StoreData): void {
     });
 }
 
+export async function flushMongoSync(timeoutMs = 3000): Promise<void> {
+  if (!mongoDb) return;
+  await Promise.race([
+    mongoSyncChain,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
 let mongoStatus: 'not_configured' | 'connected' | 'invalid_uri' | 'connection_failed' =
   'not_configured';
 
