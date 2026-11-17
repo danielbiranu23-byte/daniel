@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import multer from 'multer';
 import { GoogleGenAI, Type } from '@google/genai';
 import { MongoClient, type Db } from 'mongodb';
+import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 
 interface StudyDocument {
   id: string;
@@ -887,9 +888,556 @@ let cachedStore: StoreData | null = null;
 let mongoClient: MongoClient | null = null;
 let mongoDb: Db | null = null;
 let mongoSyncChain: Promise<void> = Promise.resolve();
+let mysqlPool: Pool | null = null;
+let mysqlSyncChain: Promise<void> = Promise.resolve();
+let mysqlStatus: 'not_configured' | 'connected' | 'invalid_config' | 'connection_failed' =
+  'not_configured';
 
 function cloneStore(store: StoreData): StoreData {
   return JSON.parse(JSON.stringify(store)) as StoreData;
+}
+
+interface ResolvedMysqlConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  ssl?: { minVersion: 'TLSv1.2'; rejectUnauthorized: boolean };
+}
+
+function normalizeMysqlUrl(raw: string): string {
+  let s = raw.trim();
+  if (!s) return '';
+  if (/^(?:MYSQL_URL|MYSQL_URI|DATABASE_URL)\s*=/i.test(s)) {
+    s = s.replace(/^(?:MYSQL_URL|MYSQL_URI|DATABASE_URL)\s*=\s*/i, '').trim();
+  }
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  const embeddedMatch = s.match(/(mysql2?:\/\/[^\s"'`;]+)/i);
+  if (embeddedMatch) {
+    s = embeddedMatch[1];
+  }
+  return s;
+}
+
+function resolveMysqlConfig(): {
+  status: 'ok' | 'not_configured' | 'invalid_config';
+  config?: ResolvedMysqlConfig;
+} {
+  const rawUrl =
+    process.env.MYSQL_URL ||
+    process.env.MYSQL_URI ||
+    (/^\s*mysql2?:\/\//i.test(process.env.DATABASE_URL || '') ? process.env.DATABASE_URL || '' : '');
+  const cleanUrl = normalizeMysqlUrl(rawUrl);
+
+  let host = (process.env.MYSQL_HOST || '').trim();
+  let port = Number(process.env.MYSQL_PORT || '3306') || 3306;
+  let user = (process.env.MYSQL_USER || '').trim();
+  let password = process.env.MYSQL_PASSWORD ?? '';
+  let database = (process.env.MYSQL_DATABASE || 'qajeelcha_macaafaa').trim() || 'qajeelcha_macaafaa';
+
+  if (cleanUrl) {
+    if (!/^mysql2?:\/\//i.test(cleanUrl)) {
+      return { status: 'invalid_config' };
+    }
+    try {
+      const parsed = new URL(cleanUrl);
+      host = parsed.hostname || host;
+      if (parsed.port) {
+        port = Number(parsed.port) || 3306;
+      }
+      user = parsed.username ? decodeURIComponent(parsed.username) : user;
+      password = parsed.password ? decodeURIComponent(parsed.password) : password;
+      const pathDb = parsed.pathname.replace(/^\/+/, '').trim();
+      if (pathDb) {
+        database = decodeURIComponent(pathDb);
+      }
+    } catch {
+      return { status: 'invalid_config' };
+    }
+  }
+
+  if (!host && !user && !cleanUrl) {
+    return { status: 'not_configured' };
+  }
+  if (!host || !user) {
+    return { status: 'invalid_config' };
+  }
+
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  const sslMode = (process.env.MYSQL_SSL || '').trim().toLowerCase();
+  const useSsl = sslMode === 'true' || (sslMode !== 'false' && !isLocalHost);
+
+  return {
+    status: 'ok',
+    config: {
+      host,
+      port,
+      user,
+      password,
+      database,
+      ...(useSsl
+        ? {
+            ssl: {
+              minVersion: 'TLSv1.2',
+              rejectUnauthorized: process.env.MYSQL_SSL_REJECT_UNAUTHORIZED === 'true',
+            },
+          }
+        : {}),
+    },
+  };
+}
+
+function parseJsonColumn<T>(raw: unknown, fallback: T): T {
+  if (raw == null) return fallback;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof raw === 'object') {
+    return raw as T;
+  }
+  return fallback;
+}
+
+async function ensureMysqlSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id VARCHAR(64) PRIMARY KEY,
+      tutor_name VARCHAR(255) NOT NULL,
+      welcome_greeting TEXT NOT NULL,
+      system_instructions LONGTEXT NOT NULL,
+      instruction_file_name VARCHAR(255) NULL,
+      instruction_pdf_path VARCHAR(512) NULL,
+      language_mode VARCHAR(32) NOT NULL,
+      grounding_mode VARCHAR(32) NOT NULL,
+      updated_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS study_documents (
+      id VARCHAR(128) PRIMARY KEY,
+      sort_order INT NOT NULL,
+      title VARCHAR(512) NOT NULL,
+      category VARCHAR(255) NOT NULL,
+      file_name VARCHAR(512) NOT NULL,
+      mime_type VARCHAR(191) NOT NULL,
+      size_bytes INT NOT NULL,
+      source_type VARCHAR(32) NOT NULL,
+      active TINYINT(1) NOT NULL,
+      summary MEDIUMTEXT NOT NULL,
+      text_content LONGTEXT NOT NULL,
+      stored_file_path VARCHAR(512) NULL,
+      created_at VARCHAR(64) NOT NULL,
+      updated_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id VARCHAR(128) PRIMARY KEY,
+      username VARCHAR(191) NOT NULL UNIQUE,
+      full_name VARCHAR(255) NOT NULL,
+      role VARCHAR(32) NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      progress_json LONGTEXT NOT NULL,
+      highlights_json LONGTEXT NULL,
+      created_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_threads (
+      id VARCHAR(128) PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      title VARCHAR(512) NOT NULL,
+      focus_doc_id VARCHAR(128) NOT NULL,
+      messages_json LONGTEXT NOT NULL,
+      created_at VARCHAR(64) NOT NULL,
+      updated_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token VARCHAR(128) PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      created_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      id VARCHAR(64) PRIMARY KEY,
+      progress_json LONGTEXT NOT NULL,
+      bible_seeded TINYINT(1) NOT NULL DEFAULT 0,
+      updated_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function syncStoreToMysql(snapshot: StoreData): Promise<void> {
+  if (!mysqlPool) return;
+  const conn = await mysqlPool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const now = new Date().toISOString();
+
+    await conn.query(
+      `INSERT INTO app_settings
+        (id, tutor_name, welcome_greeting, system_instructions, instruction_file_name, instruction_pdf_path, language_mode, grounding_mode, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+        tutor_name = VALUES(tutor_name),
+        welcome_greeting = VALUES(welcome_greeting),
+        system_instructions = VALUES(system_instructions),
+        instruction_file_name = VALUES(instruction_file_name),
+        instruction_pdf_path = VALUES(instruction_pdf_path),
+        language_mode = VALUES(language_mode),
+        grounding_mode = VALUES(grounding_mode),
+        updated_at = VALUES(updated_at)`,
+      [
+        'global',
+        snapshot.settings.tutorName,
+        snapshot.settings.welcomeGreeting,
+        snapshot.settings.systemInstructions,
+        snapshot.settings.instructionFileName ?? null,
+        snapshot.settings.instructionPdfPath ?? null,
+        snapshot.settings.languageMode,
+        snapshot.settings.groundingMode,
+        now,
+      ]
+    );
+
+    const docIds = snapshot.documents.map((d) => d.id);
+    for (const d of snapshot.documents) {
+      await conn.query(
+        `INSERT INTO study_documents
+          (id, sort_order, title, category, file_name, mime_type, size_bytes, source_type, active, summary, text_content, stored_file_path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          sort_order = VALUES(sort_order),
+          title = VALUES(title),
+          category = VALUES(category),
+          file_name = VALUES(file_name),
+          mime_type = VALUES(mime_type),
+          size_bytes = VALUES(size_bytes),
+          source_type = VALUES(source_type),
+          active = VALUES(active),
+          summary = VALUES(summary),
+          text_content = VALUES(text_content),
+          stored_file_path = VALUES(stored_file_path),
+          created_at = VALUES(created_at),
+          updated_at = VALUES(updated_at)`,
+        [
+          d.id,
+          d.order,
+          d.title,
+          d.category,
+          d.fileName,
+          d.mimeType,
+          d.sizeBytes,
+          d.sourceType,
+          d.active ? 1 : 0,
+          d.summary || '',
+          d.textContent || '',
+          d.storedFilePath ?? null,
+          d.createdAt,
+          d.updatedAt,
+        ]
+      );
+    }
+    if (docIds.length > 0) {
+      const ph = docIds.map(() => '?').join(',');
+      await conn.query(`DELETE FROM study_documents WHERE id NOT IN (${ph})`, docIds);
+    } else {
+      await conn.query('DELETE FROM study_documents');
+    }
+
+    const userIds = snapshot.users.map((u) => u.id);
+    for (const u of snapshot.users) {
+      await conn.query(
+        `INSERT INTO users
+          (id, username, full_name, role, password_hash, progress_json, highlights_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          username = VALUES(username),
+          full_name = VALUES(full_name),
+          role = VALUES(role),
+          password_hash = VALUES(password_hash),
+          progress_json = VALUES(progress_json),
+          highlights_json = VALUES(highlights_json),
+          created_at = VALUES(created_at)`,
+        [
+          u.id,
+          u.username,
+          u.fullName,
+          u.role,
+          u.passwordHash,
+          JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
+          JSON.stringify(u.highlights ?? []),
+          u.createdAt,
+        ]
+      );
+    }
+    if (userIds.length > 0) {
+      const ph = userIds.map(() => '?').join(',');
+      await conn.query(`DELETE FROM users WHERE id NOT IN (${ph})`, userIds);
+    } else {
+      await conn.query('DELETE FROM users');
+    }
+
+    const chatIds = snapshot.chats.map((c) => c.id);
+    for (const c of snapshot.chats) {
+      await conn.query(
+        `INSERT INTO chat_threads
+          (id, user_id, title, focus_doc_id, messages_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          user_id = VALUES(user_id),
+          title = VALUES(title),
+          focus_doc_id = VALUES(focus_doc_id),
+          messages_json = VALUES(messages_json),
+          created_at = VALUES(created_at),
+          updated_at = VALUES(updated_at)`,
+        [
+          c.id,
+          c.userId,
+          c.title,
+          c.focusDocId,
+          JSON.stringify(c.messages ?? []),
+          c.createdAt,
+          c.updatedAt,
+        ]
+      );
+    }
+    if (chatIds.length > 0) {
+      const ph = chatIds.map(() => '?').join(',');
+      await conn.query(`DELETE FROM chat_threads WHERE id NOT IN (${ph})`, chatIds);
+    } else {
+      await conn.query('DELETE FROM chat_threads');
+    }
+
+    const sessionEntries = Object.entries(snapshot.sessions || {});
+    const tokens = sessionEntries.map(([t]) => t);
+    for (const [token, rec] of sessionEntries) {
+      await conn.query(
+        `INSERT INTO sessions (token, user_id, created_at)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          user_id = VALUES(user_id),
+          created_at = VALUES(created_at)`,
+        [token, rec.userId, rec.createdAt]
+      );
+    }
+    if (tokens.length > 0) {
+      const ph = tokens.map(() => '?').join(',');
+      await conn.query(`DELETE FROM sessions WHERE token NOT IN (${ph})`, tokens);
+    } else {
+      await conn.query('DELETE FROM sessions');
+    }
+
+    await conn.query(
+      `INSERT INTO app_meta (id, progress_json, bible_seeded, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+        progress_json = VALUES(progress_json),
+        bible_seeded = VALUES(bible_seeded),
+        updated_at = VALUES(updated_at)`,
+      [
+        'store_meta',
+        JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
+        snapshot.bibleSeeded ? 1 : 0,
+        now,
+      ]
+    );
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    console.error('MySQL sync error:', err instanceof Error ? err.message : err);
+  } finally {
+    conn.release();
+  }
+}
+
+async function initMysqlStore(): Promise<void> {
+  const resolved = resolveMysqlConfig();
+  if (resolved.status === 'not_configured') {
+    mysqlStatus = 'not_configured';
+    return;
+  }
+  if (resolved.status === 'invalid_config' || !resolved.config) {
+    mysqlStatus = 'invalid_config';
+    console.warn('MySQL configuration invalid (check MYSQL_URL or MYSQL_HOST/MYSQL_USER).');
+    return;
+  }
+
+  try {
+    const cfg = resolved.config;
+    mysqlPool = mysql.createPool({
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
+      password: cfg.password,
+      database: cfg.database,
+      waitForConnections: true,
+      connectionLimit: 5,
+      connectTimeout: 5000,
+      ...(cfg.ssl ? { ssl: cfg.ssl } : {}),
+    });
+
+    await mysqlPool.query('SELECT 1');
+    await ensureMysqlSchema(mysqlPool);
+    mysqlStatus = 'connected';
+    console.log(`MySQL connected (database: ${cfg.database})`);
+
+    const [
+      [settingsRows],
+      [docsRows],
+      [usersRows],
+      [chatsRows],
+      [sessionsRows],
+      [metaRows],
+    ] = await Promise.all([
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM app_settings WHERE id = ?', ['global']),
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM study_documents ORDER BY sort_order ASC'),
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM users'),
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM chat_threads'),
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM sessions'),
+      mysqlPool.query<RowDataPacket[]>('SELECT * FROM app_meta WHERE id = ?', ['store_meta']),
+    ]);
+
+    if (usersRows.length === 0 && docsRows.length === 0 && settingsRows.length === 0) {
+      const seedStore = loadStore();
+      await syncStoreToMysql(seedStore);
+      console.log('Seeded initial Qajeelcha Macaafaa data into MySQL');
+      return;
+    }
+
+    const starter = createStarterStore();
+    const sRow = settingsRows[0];
+    const settings: AdminSettings = sRow
+      ? {
+          tutorName: String(sRow.tutor_name || starter.settings.tutorName),
+          welcomeGreeting: String(sRow.welcome_greeting || starter.settings.welcomeGreeting),
+          systemInstructions: String(sRow.system_instructions || starter.settings.systemInstructions),
+          instructionFileName: sRow.instruction_file_name ? String(sRow.instruction_file_name) : undefined,
+          instructionPdfPath: sRow.instruction_pdf_path ? String(sRow.instruction_pdf_path) : undefined,
+          languageMode: (sRow.language_mode as AdminSettings['languageMode']) || starter.settings.languageMode,
+          groundingMode: (sRow.grounding_mode as AdminSettings['groundingMode']) || starter.settings.groundingMode,
+        }
+      : starter.settings;
+
+    const documents: StudyDocument[] =
+      docsRows.length > 0
+        ? docsRows.map((row) => ({
+            id: String(row.id),
+            order: Number(row.sort_order) || 1,
+            title: String(row.title || ''),
+            category: String(row.category || ''),
+            fileName: String(row.file_name || ''),
+            mimeType: String(row.mime_type || 'text/plain'),
+            sizeBytes: Number(row.size_bytes) || 0,
+            sourceType: (row.source_type as StudyDocument['sourceType']) || 'starter',
+            active: Boolean(row.active),
+            summary: String(row.summary || ''),
+            textContent: String(row.text_content || ''),
+            storedFilePath: row.stored_file_path ? String(row.stored_file_path) : undefined,
+            createdAt: String(row.created_at || new Date().toISOString()),
+            updatedAt: String(row.updated_at || new Date().toISOString()),
+          }))
+        : starter.documents;
+
+    const users: UserAccount[] =
+      usersRows.length > 0
+        ? usersRows.map((row) => ({
+            id: String(row.id),
+            username: String(row.username),
+            fullName: String(row.full_name || row.username),
+            role: row.role === 'admin' ? 'admin' : 'user',
+            passwordHash: String(row.password_hash),
+            progress: parseJsonColumn<StudentProgress>(row.progress_json, {
+              completedDocIds: [],
+              quizScores: {},
+            }),
+            highlights: parseJsonColumn<BibleHighlight[]>(row.highlights_json, []),
+            createdAt: String(row.created_at || new Date().toISOString()),
+          }))
+        : starter.users;
+
+    const chats: ChatThread[] = chatsRows.map((row) => ({
+      id: String(row.id),
+      userId: String(row.user_id),
+      title: String(row.title || 'Haasaa'),
+      focusDocId: String(row.focus_doc_id || 'all'),
+      messages: parseJsonColumn<ChatMessage[]>(row.messages_json, []),
+      createdAt: String(row.created_at || new Date().toISOString()),
+      updatedAt: String(row.updated_at || new Date().toISOString()),
+    }));
+
+    const sessionsMap: Record<string, SessionRecord> = {};
+    for (const row of sessionsRows) {
+      sessionsMap[String(row.token)] = {
+        userId: String(row.user_id),
+        createdAt: String(row.created_at || new Date().toISOString()),
+      };
+    }
+
+    const mRow = metaRows[0];
+    const hydrated: StoreData = {
+      settings,
+      documents,
+      chats,
+      progress: parseJsonColumn<StudentProgress>(mRow?.progress_json, {
+        completedDocIds: [],
+        quizScores: {},
+      }),
+      users,
+      sessions: sessionsMap,
+      bibleSeeded: mRow ? Boolean(mRow.bible_seeded) : undefined,
+    };
+
+    if (!hydrated.users.some((u) => u.role === 'admin')) {
+      hydrated.users.unshift(starter.users[0]);
+    }
+    for (const c of hydrated.chats) {
+      if (!c.userId) c.userId = hydrated.users[0].id;
+    }
+
+    if (!hydrated.bibleSeeded && !hydrated.documents.some((d) => d.id.startsWith('doc-bible-'))) {
+      const johnDoc = createBibleStudyDocument(
+        'JHN',
+        'bilingual',
+        hydrated.documents.length + 1,
+        'Kakuu Haaraa (Oromo & English)'
+      );
+      if (johnDoc) {
+        hydrated.documents.push(johnDoc);
+        hydrated.bibleSeeded = true;
+      }
+    }
+
+    cachedStore = hydrated;
+    ensureDataDirs();
+    fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
+  } catch (err) {
+    mysqlStatus = 'connection_failed';
+    console.error(
+      'MySQL connection failed (continuing with fallback store):',
+      err instanceof Error ? err.message : err
+    );
+    if (mysqlPool) {
+      await mysqlPool.end().catch(() => {});
+      mysqlPool = null;
+    }
+  }
 }
 
 async function syncStoreToMongo(snapshot: StoreData): Promise<void> {
@@ -991,23 +1539,34 @@ async function syncStoreToMongo(snapshot: StoreData): Promise<void> {
   }
 }
 
-function queueMongoSync(store: StoreData): void {
-  if (!mongoDb) return;
+function queueExternalDbSync(store: StoreData): void {
+  if (!mongoDb && !mysqlPool) return;
   const snapshot = cloneStore(store);
-  mongoSyncChain = mongoSyncChain
-    .then(() => syncStoreToMongo(snapshot))
-    .catch((err) => {
-      console.error('MongoDB sync queue error:', err);
-    });
+  if (mysqlPool) {
+    mysqlSyncChain = mysqlSyncChain
+      .then(() => syncStoreToMysql(snapshot))
+      .catch((err) => {
+        console.error('MySQL sync queue error:', err);
+      });
+  }
+  if (mongoDb) {
+    mongoSyncChain = mongoSyncChain
+      .then(() => syncStoreToMongo(snapshot))
+      .catch((err) => {
+        console.error('MongoDB sync queue error:', err);
+      });
+  }
 }
 
-export async function flushMongoSync(timeoutMs = 3000): Promise<void> {
-  if (!mongoDb) return;
+export async function flushDbSync(timeoutMs = 3000): Promise<void> {
+  if (!mongoDb && !mysqlPool) return;
   await Promise.race([
-    mongoSyncChain,
+    Promise.all([mysqlSyncChain, mongoSyncChain]),
     new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 }
+
+export const flushMongoSync = flushDbSync;
 
 let mongoStatus: 'not_configured' | 'connected' | 'invalid_uri' | 'connection_failed' =
   'not_configured';
@@ -1198,7 +1757,7 @@ function saveStore(store: StoreData): void {
   cachedStore = store;
   ensureDataDirs();
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
-  queueMongoSync(store);
+  queueExternalDbSync(store);
 }
 
 let cachedAiClient: GoogleGenAI | null | undefined;
@@ -1429,12 +1988,22 @@ function buildDocumentParts(
 }
 
 export async function createApp(httpServer?: http.Server): Promise<express.Express> {
-  await initMongoStore();
+  await initMysqlStore();
+  if (!mysqlPool) {
+    await initMongoStore();
+  }
   const app = express();
   app.use(express.json({ limit: '5mb' }));
 
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ ok: true, mongoConnected: Boolean(mongoDb), mongoStatus });
+    res.json({
+      ok: true,
+      dbEngine: mysqlPool ? 'mysql' : mongoDb ? 'mongodb' : 'local_firestore',
+      mysqlConnected: Boolean(mysqlPool),
+      mysqlStatus,
+      mongoConnected: Boolean(mongoDb),
+      mongoStatus,
+    });
   });
 
   // Auth: current user

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Request, Response } from 'express';
-import { createApp, flushMongoSync } from '../server.js';
+import { createApp, flushDbSync } from '../server.js';
 
 let appPromise: ReturnType<typeof createApp> | null = null;
 
@@ -63,7 +63,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         done();
       });
     });
-    await flushMongoSync();
+    await flushDbSync();
   } catch (err) {
     appPromise = null;
     const message =
