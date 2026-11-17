@@ -1975,9 +1975,8 @@ async function syncStoreToSupabaseRest(
       }
     };
 
-    await assertRestOk(
-      'app_settings',
-      await supabaseRestFetch(cfg, 'app_settings?on_conflict=id', {
+    const tasks: Array<Promise<void>> = [
+      supabaseRestFetch(cfg, 'app_settings?on_conflict=id', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify([
@@ -1993,16 +1992,63 @@ async function syncStoreToSupabaseRest(
             updated_at: now,
           },
         ]),
-      })
-    );
-    if (rlsBlocked) {
-      return 'rls_blocked';
+      }).then((r) => assertRestOk('app_settings', r)),
+
+      supabaseRestFetch(cfg, 'app_meta?on_conflict=id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([
+          {
+            id: 'store_meta',
+            progress_json: JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
+            bible_seeded: Boolean(snapshot.bibleSeeded),
+            updated_at: now,
+          },
+        ]),
+      }).then((r) => assertRestOk('app_meta', r)),
+    ];
+
+    if (snapshot.users.length > 0) {
+      tasks.push(
+        supabaseRestFetch(cfg, 'users?on_conflict=id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            snapshot.users.map((u) => ({
+              id: u.id,
+              username: u.username,
+              full_name: u.fullName,
+              role: u.role,
+              password_hash: u.passwordHash,
+              progress_json: JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
+              highlights_json: JSON.stringify(u.highlights ?? []),
+              created_at: u.createdAt,
+            }))
+          ),
+        }).then((r) => assertRestOk('users', r))
+      );
+    }
+
+    const sessionEntries = Object.entries(snapshot.sessions || {});
+    if (sessionEntries.length > 0) {
+      tasks.push(
+        supabaseRestFetch(cfg, 'sessions?on_conflict=token', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            sessionEntries.map(([token, rec]) => ({
+              token,
+              user_id: rec.userId,
+              created_at: rec.createdAt,
+            }))
+          ),
+        }).then((r) => assertRestOk('sessions', r))
+      );
     }
 
     if (snapshot.documents.length > 0) {
-      await assertRestOk(
-        'study_documents',
-        await supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
+      tasks.push(
+        supabaseRestFetch(cfg, 'study_documents?on_conflict=id', {
           method: 'POST',
           headers: { Prefer: 'resolution=merge-duplicates' },
           body: JSON.stringify(
@@ -2023,48 +2069,13 @@ async function syncStoreToSupabaseRest(
               updated_at: d.updatedAt,
             }))
           ),
-        })
-      );
-    }
-    const existingDocsResp = await supabaseRestFetch(cfg, 'study_documents?select=id');
-    if (existingDocsResp.ok) {
-      const existingDocs = (await existingDocsResp.json()) as Array<{ id: string }>;
-      const keepDocIds = new Set(snapshot.documents.map((d) => d.id));
-      for (const row of existingDocs) {
-        if (!keepDocIds.has(row.id)) {
-          await supabaseRestFetch(cfg, `study_documents?id=eq.${encodeURIComponent(row.id)}`, {
-            method: 'DELETE',
-          });
-        }
-      }
-    }
-
-    if (snapshot.users.length > 0) {
-      await assertRestOk(
-        'users',
-        await supabaseRestFetch(cfg, 'users?on_conflict=id', {
-          method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates' },
-          body: JSON.stringify(
-            snapshot.users.map((u) => ({
-              id: u.id,
-              username: u.username,
-              full_name: u.fullName,
-              role: u.role,
-              password_hash: u.passwordHash,
-              progress_json: JSON.stringify(u.progress ?? { completedDocIds: [], quizScores: {} }),
-              highlights_json: JSON.stringify(u.highlights ?? []),
-              created_at: u.createdAt,
-            }))
-          ),
-        })
+        }).then((r) => assertRestOk('study_documents', r))
       );
     }
 
     if (snapshot.chats.length > 0) {
-      await assertRestOk(
-        'chat_threads',
-        await supabaseRestFetch(cfg, 'chat_threads?on_conflict=id', {
+      tasks.push(
+        supabaseRestFetch(cfg, 'chat_threads?on_conflict=id', {
           method: 'POST',
           headers: { Prefer: 'resolution=merge-duplicates' },
           body: JSON.stringify(
@@ -2078,67 +2089,66 @@ async function syncStoreToSupabaseRest(
               updated_at: c.updatedAt,
             }))
           ),
-        })
+        }).then((r) => assertRestOk('chat_threads', r))
       );
     }
-    const existingChatsResp = await supabaseRestFetch(cfg, 'chat_threads?select=id');
-    if (existingChatsResp.ok) {
-      const existingChats = (await existingChatsResp.json()) as Array<{ id: string }>;
-      const keepChatIds = new Set(snapshot.chats.map((c) => c.id));
-      for (const row of existingChats) {
-        if (!keepChatIds.has(row.id)) {
-          await supabaseRestFetch(cfg, `chat_threads?id=eq.${encodeURIComponent(row.id)}`, {
-            method: 'DELETE',
-          });
-        }
-      }
+
+    await Promise.all(tasks);
+    if (rlsBlocked) {
+      return 'rls_blocked';
     }
 
-    const sessionEntries = Object.entries(snapshot.sessions || {});
-    if (sessionEntries.length > 0) {
-      await assertRestOk(
-        'sessions',
-        await supabaseRestFetch(cfg, 'sessions?on_conflict=token', {
-          method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates' },
-          body: JSON.stringify(
-            sessionEntries.map(([token, rec]) => ({
-              token,
-              user_id: rec.userId,
-              created_at: rec.createdAt,
-            }))
-          ),
-        })
-      );
-    }
-    const existingSessionsResp = await supabaseRestFetch(cfg, 'sessions?select=token');
-    if (existingSessionsResp.ok) {
-      const existingSessions = (await existingSessionsResp.json()) as Array<{ token: string }>;
-      const keepTokens = new Set(Object.keys(snapshot.sessions || {}));
-      for (const row of existingSessions) {
-        if (!keepTokens.has(row.token)) {
-          await supabaseRestFetch(cfg, `sessions?token=eq.${encodeURIComponent(row.token)}`, {
-            method: 'DELETE',
-          });
+    await Promise.all([
+      (async () => {
+        const existingDocsResp = await supabaseRestFetch(cfg, 'study_documents?select=id');
+        if (existingDocsResp.ok) {
+          const existingDocs = (await existingDocsResp.json()) as Array<{ id: string }>;
+          const keepDocIds = new Set(snapshot.documents.map((d) => d.id));
+          await Promise.all(
+            existingDocs
+              .filter((row) => !keepDocIds.has(row.id))
+              .map((row) =>
+                supabaseRestFetch(cfg, `study_documents?id=eq.${encodeURIComponent(row.id)}`, {
+                  method: 'DELETE',
+                })
+              )
+          );
         }
-      }
-    }
+      })(),
+      (async () => {
+        const existingChatsResp = await supabaseRestFetch(cfg, 'chat_threads?select=id');
+        if (existingChatsResp.ok) {
+          const existingChats = (await existingChatsResp.json()) as Array<{ id: string }>;
+          const keepChatIds = new Set(snapshot.chats.map((c) => c.id));
+          await Promise.all(
+            existingChats
+              .filter((row) => !keepChatIds.has(row.id))
+              .map((row) =>
+                supabaseRestFetch(cfg, `chat_threads?id=eq.${encodeURIComponent(row.id)}`, {
+                  method: 'DELETE',
+                })
+              )
+          );
+        }
+      })(),
+      (async () => {
+        const existingSessionsResp = await supabaseRestFetch(cfg, 'sessions?select=token');
+        if (existingSessionsResp.ok) {
+          const existingSessions = (await existingSessionsResp.json()) as Array<{ token: string }>;
+          const keepTokens = new Set(Object.keys(snapshot.sessions || {}));
+          await Promise.all(
+            existingSessions
+              .filter((row) => !keepTokens.has(row.token))
+              .map((row) =>
+                supabaseRestFetch(cfg, `sessions?token=eq.${encodeURIComponent(row.token)}`, {
+                  method: 'DELETE',
+                })
+              )
+          );
+        }
+      })(),
+    ]);
 
-    await assertRestOk(
-      'app_meta',
-      await supabaseRestFetch(cfg, 'app_meta?on_conflict=id', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify([
-          {
-            id: 'store_meta',
-            progress_json: JSON.stringify(snapshot.progress ?? { completedDocIds: [], quizScores: {} }),
-            bible_seeded: Boolean(snapshot.bibleSeeded),
-            updated_at: now,
-          },
-        ]),
-      })
-    );
     return rlsBlocked ? 'rls_blocked' : hadError ? 'error' : 'ok';
   } catch (err) {
     console.error('Supabase REST sync error:', err instanceof Error ? err.message : err);
@@ -2996,6 +3006,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         createdAt: new Date().toISOString(),
       };
       saveStore(store);
+      await flushDbSync(3000);
 
       res.json({ token, user: sanitizeUser(user) });
     } catch {
@@ -3004,7 +3015,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
   });
 
   // Auth: register new student user
-  app.post('/api/auth/register', (req: Request, res: Response) => {
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
     const store = loadStore();
     const { fullName, username, password } = req.body as {
       fullName?: string;
@@ -3052,6 +3063,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       createdAt: new Date().toISOString(),
     };
     saveStore(store);
+    await flushDbSync(3000);
 
     res.status(201).json({ token, user: sanitizeUser(newUser) });
   });
