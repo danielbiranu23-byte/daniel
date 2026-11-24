@@ -359,6 +359,60 @@
         }
       },
       "required": ["id", "userId", "role", "content", "createdAt"]
+    },
+    "PersonalNote": {
+      "title": "PersonalNote",
+      "description": "Private study or teaching note strictly owned by an individual admin or student user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerRole": {
+          "type": "string",
+          "enum": ["user", "admin"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "scriptureRef": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "ownerRole", "title", "content", "category", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -393,6 +447,10 @@
     "/users/{uid}/chats/{threadId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/ChatMessage" },
       "description": "Messages inside a user's chatbot conversation thread."
+    },
+    "/users/{uid}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/PersonalNote" },
+      "description": "Private notes owned exclusively by the specific admin or student user."
     }
   }
 }

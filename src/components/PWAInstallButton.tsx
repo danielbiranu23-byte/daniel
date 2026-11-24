@@ -90,7 +90,7 @@ export function PWAInstallButton() {
       <button
         type="button"
         onClick={install}
-        className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#142d4c] bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        className="btn-3d-secondary hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#142d4c] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
       >
         <Download className="w-3.5 h-3.5" aria-hidden="true" />
         <span>App Buufadhu</span>
@@ -104,17 +104,17 @@ export function PWAInstallButton() {
         <button
           type="button"
           onClick={() => setShowIOSGuide(true)}
-          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#142d4c] bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="btn-3d-secondary hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#142d4c] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" aria-hidden="true" />
           <span>App Fe’i (iOS)</span>
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b192b]/55 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white border border-[#e4e0d8] p-6 shadow-2xl space-y-3">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b192b]/70 p-4">
+            <div className="sanctuary-card w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-editorial text-lg font-semibold text-[#171614]">
+                <h3 className="font-editorial text-lg font-bold text-[#171614] text-3d-subtle">
                   iPhone / iPad Irratti Fe’i
                 </h3>
                 <button
@@ -134,7 +134,7 @@ export function PWAInstallButton() {
               <button
                 type="button"
                 onClick={() => setShowIOSGuide(false)}
-                className="w-full py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] cursor-pointer"
+                className="btn-3d-primary w-full py-2 text-sm font-medium rounded-xl cursor-pointer"
               >
                 Tole
               </button>
@@ -153,7 +153,7 @@ export function OfflineIndicator() {
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-xl bg-[#9a6b16] px-3.5 py-2 text-xs font-medium text-white shadow-lg">
+    <div className="btn-3d-gold fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold text-white shadow-lg">
       <WifiOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
       <span>Haala Offline — Chatbot fi Macaafni Qulqulluun offline hojjechaa jiru</span>
     </div>

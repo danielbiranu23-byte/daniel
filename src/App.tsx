@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { CheckCircle2, Loader2, X } from 'lucide-react';
+import { CheckCircle2, Loader2, Mail, MapPin, Phone, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminSettingsView } from './components/AdminSettingsView';
 import { AuthView } from './components/AuthView';
@@ -9,8 +9,10 @@ import { DashboardView } from './components/DashboardView';
 import { FloatingChatbotWidget } from './components/FloatingChatbotWidget';
 import { LessonReaderModal } from './components/LessonReaderModal';
 import { LibraryView } from './components/LibraryView';
+import { NotesView } from './components/NotesView';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { QuizModal } from './components/QuizModal';
+import { Sanctuary3DBackground } from './components/Sanctuary3DBackground';
 import { TopBar, type AppTab } from './components/TopBar';
 import { authHeaders, extractErrorMessage, getAuthToken, safeJson, setAuthToken } from './lib/api';
 import {
@@ -139,7 +141,20 @@ export default function App() {
             for (const d of nextDocs) mergedMap.set(d.id, d);
             for (const d of fsDocs) {
               if (d.active || isAdmin) {
-                mergedMap.set(d.id, d);
+                const existing = mergedMap.get(d.id);
+                if (existing) {
+                  mergedMap.set(d.id, {
+                    ...existing,
+                    ...d,
+                    storedFilePath: existing.storedFilePath || d.storedFilePath,
+                    textContent:
+                      existing.textContent && existing.textContent.length >= d.textContent.length
+                        ? existing.textContent
+                        : d.textContent,
+                  });
+                } else {
+                  mergedMap.set(d.id, d);
+                }
               }
             }
             nextDocs = Array.from(mergedMap.values())
@@ -465,60 +480,70 @@ export default function App() {
 
   if (authChecking || loadingData) {
     return (
-      <div className="min-h-screen bg-[#f7f6f2] flex items-center justify-center">
-        <div className="flex items-center gap-3 text-[#52504b] text-sm">
+      <div className="relative min-h-screen bg-[#f7f6f2] flex items-center justify-center overflow-hidden">
+        <Sanctuary3DBackground />
+        <div className="relative z-10 sanctuary-card rounded-2xl px-6 py-4 flex items-center gap-3 text-[#52504b] text-sm">
           <Loader2 className="w-5 h-5 animate-spin text-[#142d4c]" />
-          <span>Barnoota Macaafa Qulqulluu qopheessaa jira...</span>
+          <span className="font-medium">Barnoota Macaafa Qulqulluu qopheessaa jira...</span>
         </div>
       </div>
     );
   }
 
   if (!user) {
-    return <AuthView onAuthenticated={handleAuthenticated} />;
+    return (
+      <div className="relative min-h-screen bg-[#f7f6f2] overflow-x-hidden">
+        <Sanctuary3DBackground />
+        <div className="relative z-10">
+          <AuthView onAuthenticated={handleAuthenticated} />
+        </div>
+      </div>
+    );
   }
 
   const effectiveTab: AppTab =
     activeTab === 'admin' && user.role !== 'admin' ? 'dashboard' : activeTab;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f7f6f2] text-[#171614]">
-      <TopBar
-        user={user}
-        activeTab={effectiveTab}
-        onSelectTab={setActiveTab}
-        onNewChat={() => handleCreateNewChat('all')}
-        onLogout={handleLogout}
-      />
+    <div className="relative min-h-screen flex flex-col bg-[#f7f6f2] text-[#171614]">
+      <Sanctuary3DBackground />
+      <div className="relative z-10 min-h-screen flex flex-col">
+        <TopBar
+          user={user}
+          activeTab={effectiveTab}
+          onSelectTab={setActiveTab}
+          onNewChat={() => handleCreateNewChat('all')}
+          onLogout={handleLogout}
+        />
 
-      {welcomeBanner && (
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-5 animate-enter">
-          <div className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-950 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
-              <span className="font-medium">{welcomeBanner}</span>
+        {welcomeBanner && (
+          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-5 animate-enter">
+            <div className="sanctuary-card px-4 py-3 rounded-xl bg-emerald-50 border-emerald-200 text-sm text-emerald-950 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
+                <span className="font-medium">{welcomeBanner}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWelcomeBanner('')}
+                aria-label="Close welcome message"
+                className="p-1 text-emerald-700 hover:text-emerald-950 rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setWelcomeBanner('')}
-              aria-label="Close welcome message"
-              className="p-1 text-emerald-700 hover:text-emerald-950 rounded cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {loadError && (
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
-            {loadError}
+        {loadError && (
+          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6">
+            <div className="sanctuary-card p-4 rounded-xl bg-red-50 border-red-200 text-sm text-red-800">
+              {loadError}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <main className="flex-1">
+        <main className="flex-1">
         {effectiveTab === 'dashboard' && (
           <DashboardView
             isAdmin={user.role === 'admin'}
@@ -536,6 +561,7 @@ export default function App() {
             onTakeQuiz={setQuizDoc}
             onToggleComplete={handleToggleComplete}
             onOpenBible={() => setActiveTab('bible')}
+            onOpenNotes={() => setActiveTab('notes')}
             onOpenAdmin={() => setActiveTab('admin')}
             onOpenBibleRef={handleOpenBibleRef}
           />
@@ -581,61 +607,122 @@ export default function App() {
           />
         )}
 
+        {effectiveTab === 'notes' && <NotesView user={user} />}
+
         {effectiveTab === 'admin' && user.role === 'admin' && (
           <AdminSettingsView
             currentUser={user}
             onUserUpdated={setUser}
             onCurriculumChanged={loadCurriculum}
             onPreviewDoc={setReaderDoc}
+            onOpenNotes={() => setActiveTab('notes')}
             onEnterStudentSection={() => setActiveTab('dashboard')}
           />
         )}
       </main>
 
       {effectiveTab !== 'chat' && (
-        <footer className="border-t border-[#e4e0d8] bg-white py-7 mt-12">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#76736c]">
-            <p className="font-editorial text-sm text-[#171614]">
-              Qajeelcha Macaafaa <span className="font-sans text-xs text-[#76736c]">· Giddugala Barnoota Macaafa Qulqulluu</span>
-            </p>
-            <div className="flex flex-wrap items-center gap-5">
-              <button
-                type="button"
-                onClick={() => setActiveTab('dashboard')}
-                className="hover:text-[#142d4c] transition-colors cursor-pointer"
-              >
-                Kutaa Barataa
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('bible')}
-                className="hover:text-[#142d4c] transition-colors cursor-pointer"
-              >
-                Macaafa Qulqulluu
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('chat')}
-                className="hover:text-[#142d4c] transition-colors cursor-pointer"
-              >
-                Chatbot
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('library')}
-                className="hover:text-[#142d4c] transition-colors cursor-pointer"
-              >
-                Barnootawwan
-              </button>
-              {user.role === 'admin' && (
+        <footer className="border-t-2 border-[#dfd9cd] bg-gradient-to-b from-[#ffffff] to-[#f7f4ec] py-8 mt-12 shadow-[0_-4px_20px_-8px_rgba(20,45,76,0.08)]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              {/* Brand Logo + Title + Qunnamtii */}
+              <div className="flex items-start sm:items-center gap-3.5">
+                <span className="w-12 h-12 rounded-xl overflow-hidden bg-[#142d4c] border-2 border-[#d4a24c] border-b-3 shadow-md shrink-0">
+                  <img
+                    src="/assets/aistudio/image_27ab89bd.png"
+                    alt="Qajeelcha Macaafaa Qulqulluu Logo"
+                    className="w-full h-full object-cover object-top"
+                  />
+                </span>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-editorial text-base sm:text-lg font-extrabold text-3d-brand-sculpture text-3d-brand-float">
+                      Qajeelcha Macaafaa Qulqulluu
+                    </span>
+                    <span className="font-sans text-xs font-normal text-[#76736c]">
+                      · Giddugala Barnoota Macaafa Qulqulluu
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#52504b]">
+                    <span className="font-semibold text-[#9a6b16]">Qunnamtii:</span>
+                    <a
+                      href="mailto:danielbiranu.23@gmail.com"
+                      className="inline-flex items-center gap-1.5 hover:text-[#142d4c] transition-colors"
+                    >
+                      <Mail className="w-3.5 h-3.5 text-[#142d4c]" aria-hidden="true" />
+                      <span>danielbiranu.23@gmail.com</span>
+                    </a>
+                    <a
+                      href="tel:+251932387559"
+                      className="inline-flex items-center gap-1.5 hover:text-[#142d4c] transition-colors"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-[#142d4c]" aria-hidden="true" />
+                      <span>+251932387559</span>
+                    </a>
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-[#9a6b16]" aria-hidden="true" />
+                      <span>Bale, Oromia</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Navigation Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('admin')}
-                  className="hover:text-[#142d4c] transition-colors cursor-pointer"
+                  onClick={() => setActiveTab('dashboard')}
+                  className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
                 >
-                  Admin Settings
+                  Kutaa Barataa
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('bible')}
+                  className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
+                >
+                  Macaafa Qulqulluu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('chat')}
+                  className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
+                >
+                  Chatbot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('library')}
+                  className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
+                >
+                  Barnootawwan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('notes')}
+                  className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
+                >
+                  {user.role === 'admin' ? 'Yaadannoo Admin' : 'Yaadannoo'}
+                </button>
+                {user.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('admin')}
+                    className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-medium text-[#52504b] hover:text-[#142d4c] cursor-pointer"
+                  >
+                    Admin Settings
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#e4e0d8] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#76736c]">
+              <p className="font-medium text-[#52504b]">
+                © 2026 Daniel Biranu. Mirgi hundi eegamaadha!
+              </p>
+              <p className="text-[11px] text-[#76736c]">
+                Bale, Oromia · Qajeelcha Macaafaa Qulqulluu 3D
+              </p>
             </div>
           </div>
         </footer>
@@ -674,6 +761,7 @@ export default function App() {
       )}
 
       <OfflineIndicator />
+      </div>
     </div>
   );
 }

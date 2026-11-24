@@ -1,6 +1,5 @@
-import { AlertCircle, BookOpen, CheckCircle2, KeyRound, Loader2, ShieldCheck, UserPlus } from 'lucide-react';
-import { useState } from 'react';
-import authHeroImg from '../assets/images/bible_god_light_1794765010352.jpg';
+import { AlertCircle, CheckCircle2, KeyRound, Loader2, Mail, MapPin, Phone, ShieldCheck, UserPlus } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { extractErrorMessage, safeJson, setAuthToken } from '../lib/api';
 import {
   ensureFirebaseProfile,
@@ -8,6 +7,7 @@ import {
   signOutFirebase,
 } from '../lib/firebase';
 import type { AuthUser } from '../types';
+import { Bible3DShowcase } from './Bible3DShowcase';
 
 interface AuthViewProps {
   onAuthenticated: (user: AuthUser, enteredTab: 'user' | 'admin') => void;
@@ -21,19 +21,23 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
   const [mode, setMode] = useState<AuthMode>('login');
 
   const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  const usernameInputRef = useRef<HTMLInputElement>(null);
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [imgFailed, setImgFailed] = useState(false);
+  const [popupNotice, setPopupNotice] = useState('');
 
   const handleGoogleSignIn = async () => {
     setError('');
     setSuccessMsg('');
+    setPopupNotice('');
     setGoogleLoading(true);
     try {
       const { user: fbUser, idToken } = await signInWithGooglePopup();
@@ -67,38 +71,33 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         }
       }
 
-      if (data && !res.ok) {
+      if (!res.ok || !data?.token || !data?.user) {
         await signOutFirebase();
-        throw new Error(extractErrorMessage(data.error, 'Google waliin seenuun hin danda’amne.'));
+        throw new Error(
+          extractErrorMessage(
+            data?.error,
+            'Google waliin seenuun hin danda’amne. Email fi Password keetiin Kutaa Barataa seeni.'
+          )
+        );
       }
 
-      if (res.ok && data?.token && data?.user) {
-        setAuthToken(data.token);
-        onAuthenticated(data.user, roleTab);
-        return;
-      }
-
-      // Firebase Auth + Firestore profile already verified this user cleanly
-      const fallbackUser: AuthUser = {
-        id: fbUser.uid,
-        username: (fbUser.email || fbUser.uid).split('@')[0],
-        fullName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Fayyadamaa Google',
-        role,
-        createdAt: new Date().toISOString(),
-      };
-      onAuthenticated(fallbackUser, roleTab);
+      setAuthToken(data.token);
+      onAuthenticated(
+        data.user,
+        (data as { effectiveTab?: 'admin' | 'user' }).effectiveTab ||
+          (data.user.role === 'admin' ? 'admin' : 'user')
+      );
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        setError('Foddaan seenumsa Google cufameera. Irra deebi’ii yaali.');
-      } else if (code === 'auth/unauthorized-domain') {
-        setError(
-          'Domain haaraan kun Firebase Console (Authentication → Settings → Authorized domains) keessatti dabalamuu qaba; yookiin username fi password dhaan seeni.'
+        setError('Foddaan seenumsa Google cufameera. Irra deebi’ii yaali ykn Email fi Password gadiitiin seeni.');
+      } else if (code === 'auth/unauthorized-domain' || code === 'auth/popup-blocked') {
+        setPopupNotice(
+          roleTab === 'admin'
+            ? 'Browseriin kee popup Google cufeera (ykn domain hin hayyamamne). Rakkoo tokko malee gadi bu’iitii Email Admin (danielbiranu.23@gmail.com) fi Password dhaan Kutaa Admin seeni.'
+            : 'Browseriin kee popup Google cufeera. Rakkoo tokko malee gadi bu’iitii Email fi Password keetiin Kutaa Barataa seeni (ykn "Galmaa’i" tuquun Email haaraa uumi).'
         );
-      } else if (code === 'auth/popup-blocked') {
-        setError(
-          'Browseriin kee popup Google cufeera. Maaloo popup hayyami ykn username fi password dhaan seeni.'
-        );
+        setTimeout(() => usernameInputRef.current?.focus(), 60);
       } else {
         setError(extractErrorMessage(err, 'Google waliin seenuun hin milkoofne.'));
       }
@@ -112,6 +111,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
     setMode('login');
     setError('');
     setSuccessMsg('');
+    setPopupNotice('');
     setPassword('');
     setConfirmPassword('');
   };
@@ -120,6 +120,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
     setMode(nextMode);
     setError('');
     setSuccessMsg('');
+    setPopupNotice('');
     setPassword('');
     setConfirmPassword('');
   };
@@ -128,6 +129,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+    setPopupNotice('');
 
     if (mode === 'reset') {
       if (password !== confirmPassword) {
@@ -167,7 +169,12 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullName, username, password }),
+          body: JSON.stringify({
+            fullName,
+            email,
+            username: username.trim() || undefined,
+            password,
+          }),
         });
         const data = await safeJson<{ error?: string; token?: string; user?: AuthUser }>(res);
         if (!res.ok || !data.token || !data.user) {
@@ -199,7 +206,24 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
           expectedRole: roleTab,
         }),
       });
-      const data = await safeJson<{ error?: string; token?: string; user?: AuthUser }>(res);
+      const data = await safeJson<{
+        error?: string;
+        token?: string;
+        user?: AuthUser;
+        needsRegistration?: boolean;
+      }>(res);
+      if (res.status === 404 && data.needsRegistration && roleTab === 'user') {
+        const typedEmail = username.trim();
+        setEmail(typedEmail);
+        setUsername('');
+        setMode('register');
+        setError('');
+        setSuccessMsg(
+          `Email "${typedEmail}" haaraadha! Maqaa Guutuu kee asitti galchiitii "Galmaa’ii Kutaa Barataa Seeni" tuqi.`
+        );
+        setTimeout(() => fullNameInputRef.current?.focus(), 60);
+        return;
+      }
       if (!res.ok || !data.token || !data.user) {
         throw new Error(extractErrorMessage(data.error, 'Seenuun hin danda’amne.'));
       }
@@ -213,59 +237,95 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f6f2] flex items-center justify-center p-4 sm:p-6 lg:p-10">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-10">
       <div className="w-full max-w-5xl sanctuary-card rounded-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch animate-enter">
-        {/* Left Editorial Panel */}
-        <div className="lg:col-span-5 relative bg-[#142d4c] text-white flex flex-col justify-between min-h-[280px]">
-          {!imgFailed && (
-            <img
-              src={authHeroImg}
-              alt="Macaafa Qulqulluu ifa Waaqayyoo keessatti baname"
-              referrerPolicy="no-referrer"
-              onError={() => setImgFailed(true)}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          )}
-          <div className="relative z-10 p-7 sm:p-10 flex flex-col justify-between h-full bg-gradient-to-t from-[#0b192b]/95 via-[#142d4c]/65 to-[#0b192b]/40">
-            <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-lg bg-white/12 border border-white/20 backdrop-blur-sm flex items-center justify-center">
-                <BookOpen className="w-4 h-4 text-[#f5d08a]" aria-hidden="true" />
-              </span>
-              <span className="font-editorial text-lg font-semibold tracking-tight text-white">
-                Qajeelcha Macaafaa
-              </span>
-            </div>
-
-            <div className="space-y-4 py-8 lg:py-0">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#f5d08a] font-medium">
-                Giddugala Barnoota Macaafa Qulqulluu
-              </p>
-              <h1 className="font-editorial text-2xl sm:text-3xl font-semibold leading-snug text-balance text-white">
-                Macaafa Qulqulluu fi Sagalee Waaqayyoo
-              </h1>
-              <div className="pt-3 border-t border-white/20">
-                <p className="text-sm text-zinc-100/95 leading-relaxed">
-                  “Ani isinittan hima, Eenyu illee namoota duratti Eenyu akkan ta&apos;e dhugaa ba&apos;ee yoo mul&apos;ise, anis ilmi namaa ergamoota Waaqayyoo duratti akkasuma dhugaa nan ba&apos;aaf.” — <span className="font-mono text-xs text-[#f5d08a]">Luq 12:8</span>
-                </p>
+        {/* Left Interactive 3D Lapis Sanctuary Panel */}
+        <div className="lg:col-span-5 relative bg-gradient-to-b from-[#17365d] via-[#122b49] to-[#0b192b] text-white flex flex-col justify-between min-h-[340px] p-7 sm:p-9 overflow-hidden">
+          <div className="relative z-10 flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl overflow-hidden border-2 border-[#d4a24c] border-b-3 bg-[#0e2139] shadow-md shrink-0">
+              <img
+                src="/assets/aistudio/image_27ab89bd.png"
+                alt="Qajeelcha Macaafaa Qulqulluu Logo"
+                className="w-full h-full object-cover object-top"
+              />
+            </span>
+            <div className="brand-3d-viewport flex-1 min-w-0 py-1 px-2.5 rounded-xl bg-[#0a1728]/65 border border-[#d4a24c]/35">
+              <div className="brand-3d-marquee font-editorial text-base sm:text-lg font-extrabold text-3d-brand-sculpture-light">
+                <span>Qajeelcha Macaafaa Qulqulluu</span>
+                <span aria-hidden="true" className="text-[#d4a24c]">✦</span>
+                <span aria-hidden="true">Qajeelcha Macaafaa Qulqulluu</span>
+                <span aria-hidden="true" className="text-[#d4a24c]">✦</span>
               </div>
             </div>
+          </div>
 
-            <p className="text-xs text-zinc-200/80 tracking-wide">
-              Sagalee Waaqayyoo · Macaafa Qulqulluu
+          {/* Interactive 3D Open Bible Stage */}
+          <div className="relative z-10 mt-4 mb-2 h-52 sm:h-56 rounded-2xl border border-white/15 bg-[#0a1728]/55 shadow-inner overflow-hidden">
+            <Bible3DShowcase variant="auth" />
+          </div>
+
+          {/* Brand Logo + Contact Strip directly under 3D ("3D jala") */}
+          <div className="relative z-10 mb-4 p-3 rounded-xl bg-[#0a1728]/70 border border-white/15 flex items-center gap-3">
+            <img
+              src="/assets/aistudio/image_27ab89bd.png"
+              alt="Daniel Biranu — Qajeelcha Macaafaa Qulqulluu"
+              className="w-11 h-11 rounded-xl object-cover object-top border-2 border-[#d4a24c] shadow-md shrink-0"
+            />
+            <div className="min-w-0 text-[11px] leading-snug space-y-0.5">
+              <p className="font-semibold text-[#f5d08a] truncate">
+                Daniel Biranu · Qajeelcha Macaafaa Qulqulluu
+              </p>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-zinc-200">
+                <a
+                  href="mailto:danielbiranu.23@gmail.com"
+                  className="inline-flex items-center gap-1 hover:text-[#f5d08a] transition-colors truncate"
+                >
+                  <Mail className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                  <span>danielbiranu.23@gmail.com</span>
+                </a>
+                <a
+                  href="tel:+251932387559"
+                  className="inline-flex items-center gap-1 hover:text-[#f5d08a] transition-colors"
+                >
+                  <Phone className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                  <span>+251932387559</span>
+                </a>
+              </div>
+              <p className="inline-flex items-center gap-1 text-zinc-300">
+                <MapPin className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                <span>Bale, Oromia</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="relative z-10 space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#f5d08a] font-semibold">
+              Giddugala Barnoota Macaafa Qulqulluu · 3D
             </p>
+            <h1 className="font-editorial text-2xl sm:text-3xl font-bold leading-snug text-balance text-white text-3d-light">
+              Macaafa Qulqulluu fi Sagalee Waaqayyoo
+            </h1>
+            <div className="pt-3 border-t border-white/20 space-y-2">
+              <p className="text-xs sm:text-sm text-zinc-100/95 leading-relaxed">
+                “Ani isinittan hima, Eenyu illee namoota duratti Eenyu akkan ta&apos;e dhugaa ba&apos;ee yoo mul&apos;ise, anis ilmi namaa ergamoota Waaqayyoo duratti akkasuma dhugaa nan ba&apos;aaf.” — <span className="font-mono text-xs text-[#f5d08a]">Luq 12:8</span>
+              </p>
+              <p className="text-[11px] text-zinc-300">
+                © 2026 Daniel Biranu. Mirgi hundi eegamaadha!
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Right Form Panel */}
         <div className="lg:col-span-7 p-6 sm:p-10 lg:p-12 flex flex-col justify-center space-y-6 bg-white">
           {/* Role Switcher */}
-          <div className="flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-xl w-full">
+          <div className="tray-3d flex items-center gap-1.5 p-1.5 rounded-xl w-full">
             <button
               type="button"
               onClick={() => switchRole('user')}
               className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all cursor-pointer ${
                 roleTab === 'user'
-                  ? 'bg-white text-[#142d4c] shadow-xs'
+                  ? 'tab-3d-active text-[#142d4c] font-semibold'
                   : 'text-[#52504b] hover:text-[#171614]'
               }`}
             >
@@ -276,7 +336,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
               onClick={() => switchRole('admin')}
               className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all cursor-pointer ${
                 roleTab === 'admin'
-                  ? 'bg-white text-[#142d4c] shadow-xs'
+                  ? 'tab-3d-active text-[#142d4c] font-semibold'
                   : 'text-[#52504b] hover:text-[#171614]'
               }`}
             >
@@ -284,12 +344,40 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             </button>
           </div>
 
+          {/* Student Email Mode Tabs (Seeni vs Email dhaan Galmaa'i) */}
+          {roleTab === 'user' && mode !== 'reset' && (
+            <div className="flex items-center gap-2 border-b border-[#e4e0d8] pb-3">
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  mode === 'login'
+                    ? 'bg-[#142d4c] text-white shadow-sm'
+                    : 'bg-[#f4f1ea] text-[#52504b] hover:text-[#171614]'
+                }`}
+              >
+                Email dhaan Seeni
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('register')}
+                className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  mode === 'register'
+                    ? 'bg-[#142d4c] text-white shadow-sm'
+                    : 'bg-[#f4f1ea] text-[#52504b] hover:text-[#171614]'
+                }`}
+              >
+                Email Haaraan Galmaa’i
+              </button>
+            </div>
+          )}
+
           {/* Heading */}
           <div className="space-y-1.5">
-            <h2 className="font-editorial text-2xl sm:text-[26px] font-semibold text-[#171614] tracking-tight">
+            <h2 className="font-editorial text-2xl sm:text-[28px] font-bold text-[#171614] text-3d-display tracking-tight">
               {mode === 'login' &&
                 (roleTab === 'admin' ? 'Admin Settings Seeni' : 'Kutaa Barataa Seeni')}
-              {mode === 'register' && 'Akkaawuntii Barataa Haaraa Uumi'}
+              {mode === 'register' && 'Email dhaan Kutaa Barataa Seeni'}
               {mode === 'reset' &&
                 (roleTab === 'admin'
                   ? 'Password Admin Haaromsi (Reset)'
@@ -298,12 +386,12 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             <p className="text-sm text-[#52504b] leading-relaxed">
               {mode === 'login' &&
                 (roleTab === 'admin'
-                  ? 'Maqaa Admin fi Password galchuun faayiloota barnootaa fi qindaa’ina bulchi.'
-                  : 'Maqaa fayyadamaa (barataa ykn Admin) fi Password keetiin seenuun barnoota kee itti fufi.')}
+                  ? 'Email Admin (danielbiranu.23@gmail.com) ykn Username fi Password galchuun Kutaa Admin seeni.'
+                  : 'Email keessan fi Password galchuun kallattiin Kutaa Barataa seeni. Yoo email haaraa ta’e ofumaan si galmeessa.')}
               {mode === 'register' &&
-                'Maqaa guutuu, maqaa fayyadamaa (username), fi password galchuun galmaa’i.'}
+                'Maqaa guutuu, Email keessan, fi Password galchuun kallattiin Kutaa Barataa seeni.'}
               {mode === 'reset' &&
-                'Yoo password dagatte, maqaa fayyadamaa dura ittiin galmoofte galchuun password haaraa kenni.'}
+                'Yoo password dagatte, Email keessan ykn maqaa dura galchite galchuun password haaraa kenni.'}
             </p>
           </div>
 
@@ -311,6 +399,13 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
               <span>{successMsg}</span>
+            </div>
+          )}
+
+          {popupNotice && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <span>{popupNotice}</span>
             </div>
           )}
 
@@ -327,7 +422,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading || googleLoading}
-                className="w-full inline-flex items-center justify-center gap-2.5 py-2.5 px-4 text-sm font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f7f6f2] shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="btn-3d-secondary w-full inline-flex items-center justify-center gap-2.5 py-2.5 px-4 text-sm font-medium text-[#171614] rounded-xl cursor-pointer disabled:opacity-50"
               >
                 {googleLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin text-[#142d4c]" />
@@ -351,13 +446,13 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                     />
                   </svg>
                 )}
-                <span>Google Waliin Seeni (Firebase Cloud)</span>
+                <span>Google Waliin Seeni (Popup)</span>
               </button>
 
               <div className="relative flex items-center py-0.5">
                 <div className="flex-grow border-t border-[#e4e0d8]" />
                 <span className="flex-shrink mx-3 text-[11px] uppercase tracking-wider text-[#76736c]">
-                  ykn username dhaan
+                  ykn Email fi Password dhaan
                 </span>
                 <div className="flex-grow border-t border-[#e4e0d8]" />
               </div>
@@ -366,38 +461,67 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && roleTab === 'user' && (
-              <div className="space-y-1.5">
-                <label htmlFor="auth-fullname" className="block text-xs font-medium text-[#52504b]">
-                  Maqaa Guutuu (Full Name)
-                </label>
-                <input
-                  id="auth-fullname"
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Fkn: Caalaa Biraanuu"
-                  className="w-full px-3.5 py-2.5 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c] transition-colors"
-                />
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <label htmlFor="auth-fullname" className="block text-xs font-medium text-[#52504b]">
+                    Maqaa Guutuu (Full Name)
+                  </label>
+                  <input
+                    ref={fullNameInputRef}
+                    id="auth-fullname"
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Fkn: Caalaa Biraanuu"
+                    className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="auth-email" className="block text-xs font-medium text-[#52504b]">
+                    Email Barataa (Email Address)
+                  </label>
+                  <input
+                    id="auth-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="fkn: caalaa@gmail.com"
+                    className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
+                  />
+                </div>
+              </>
             )}
 
             <div className="space-y-1.5">
               <label htmlFor="auth-username" className="block text-xs font-medium text-[#52504b]">
-                {roleTab === 'admin'
-                  ? 'Maqaa Admin (Admin Username)'
-                  : mode === 'reset'
-                    ? 'Maqaa Fayyadamaa Dura Galchite (Registered Username)'
-                    : 'Maqaa Fayyadamaa (Username)'}
+                {mode === 'register'
+                  ? 'Maqaa Fayyadamaa (Username - dirqama miti)'
+                  : roleTab === 'admin'
+                    ? 'Email Admin ykn Username'
+                    : mode === 'reset'
+                      ? 'Email ykn Maqaa Dura Galchite'
+                      : 'Email Barataa ykn Username'}
               </label>
               <input
+                ref={usernameInputRef}
                 id="auth-username"
                 type="text"
-                required
+                autoComplete="email"
+                inputMode="email"
+                required={mode !== 'register'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder={roleTab === 'admin' ? 'Maqaa Admin galchi' : 'Maqaa fayyadamaa galchi'}
-                className="w-full px-3.5 py-2.5 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c] transition-colors"
+                placeholder={
+                  mode === 'register'
+                    ? 'Duwwaa dhiisuu dandeessa (email irraa uuma)'
+                    : roleTab === 'admin'
+                      ? 'danielbiranu.23@gmail.com ykn admin'
+                      : 'fkn: maqaa@gmail.com'
+                }
+                className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -412,7 +536,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c] transition-colors"
+                className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -428,7 +552,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-3.5 py-2.5 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c] transition-colors"
+                  className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
                 />
               </div>
             )}
@@ -436,7 +560,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="btn-3d-primary w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-sm font-medium rounded-xl cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -448,8 +572,9 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                 <ShieldCheck className="w-4 h-4" />
               )}
               <span>
-                {mode === 'login' && 'Seeni (Login)'}
-                {mode === 'register' && 'Galmaa’ii Seeni'}
+                {mode === 'login' &&
+                  (roleTab === 'admin' ? 'Admin Settings Seeni' : 'Kutaa Barataa Seeni')}
+                {mode === 'register' && 'Galmaa’ii Kutaa Barataa Seeni'}
                 {mode === 'reset' && 'Password Haaromsi'}
               </span>
             </button>
@@ -463,7 +588,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                 onClick={() => switchMode('reset')}
                 className="text-[#142d4c] font-medium hover:underline cursor-pointer"
               >
-                Password dagadheera? (Maqaadhaan reset godhi)
+                Password dagadheera? (Email / Maqaadhaan reset godhi)
               </button>
             ) : (
               <button
@@ -496,9 +621,9 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             )}
           </div>
 
-          {/* Scripture verse — Editorial Pull Quote */}
-          <div className="py-3.5 px-4 border-y border-[#e4e0d8] bg-[#f7f6f2]/70 text-sm font-editorial italic text-[#171614] text-center">
-            “Yesuus karaadha, dhugaadha, jireenya” — <span className="not-italic font-mono text-xs text-[#9a6b16] font-medium">Yohn 14:6</span>
+          {/* Scripture verse — 3D Recessed Quote */}
+          <div className="sanctuary-subsurface py-3.5 px-4 rounded-xl text-sm font-editorial italic text-[#171614] text-center">
+            “Yesuus karaadha, dhugaadha, jireenya” — <span className="not-italic font-mono text-xs text-[#9a6b16] font-semibold">Yohn 14:6</span>
           </div>
         </div>
       </div>

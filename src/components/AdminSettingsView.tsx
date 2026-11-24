@@ -10,6 +10,7 @@ import {
   FileUp,
   KeyRound,
   Loader2,
+  NotebookPen,
   Save,
   Trash2,
   Users,
@@ -38,6 +39,7 @@ interface AdminSettingsViewProps {
   onUserUpdated: (user: AuthUser) => void;
   onCurriculumChanged: () => Promise<void>;
   onPreviewDoc: (doc: StudyDocument) => void;
+  onOpenNotes: () => void;
   onEnterStudentSection: () => void;
 }
 
@@ -52,6 +54,7 @@ export function AdminSettingsView({
   onUserUpdated,
   onCurriculumChanged,
   onPreviewDoc,
+  onOpenNotes,
   onEnterStudentSection,
 }: AdminSettingsViewProps) {
   const [loading, setLoading] = useState(true);
@@ -76,6 +79,7 @@ export function AdminSettingsView({
 
   // Admin Credentials state
   const [adminFullName, setAdminFullName] = useState(currentUser.fullName);
+  const [adminEmail, setAdminEmail] = useState(currentUser.email || 'danielbiranu.23@gmail.com');
   const [adminUsername, setAdminUsername] = useState(currentUser.username);
   const [adminNewPassword, setAdminNewPassword] = useState('');
 
@@ -89,6 +93,8 @@ export function AdminSettingsView({
   const [docTestamentFilter, setDocTestamentFilter] = useState<'all' | 'old' | 'new'>('all');
 
   const [busyAction, setBusyAction] = useState(false);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [uploadingInstructionFile, setUploadingInstructionFile] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -135,6 +141,12 @@ export function AdminSettingsView({
       throw err;
     }
   }, [currentUser.role]);
+
+  useEffect(() => {
+    setAdminFullName(currentUser.fullName);
+    setAdminUsername(currentUser.username);
+    setAdminEmail(currentUser.email || 'danielbiranu.23@gmail.com');
+  }, [currentUser.email, currentUser.fullName, currentUser.username]);
 
   useEffect(() => {
     loadAdminData()
@@ -462,6 +474,7 @@ export function AdminSettingsView({
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           fullName: adminFullName,
+          email: adminEmail,
           username: adminUsername,
           newPassword: adminNewPassword || undefined,
         }),
@@ -474,7 +487,7 @@ export function AdminSettingsView({
       await loadAdminData();
       setFeedback({
         type: 'success',
-        text: `Maqaa Admin (${data.user.username}) fi password milkaa’inaan haaromfameera.`,
+        text: `Odeeffannoon Admin (${data.user.email || data.user.username}) fi password milkaa’inaan haaromfameera.`,
       });
     } catch (err) {
       setFeedback({
@@ -483,6 +496,36 @@ export function AdminSettingsView({
       });
     } finally {
       setBusyAction(false);
+    }
+  };
+
+  const handleDeleteUser = async (targetUser: AuthUser) => {
+    if (targetUser.role === 'admin' || targetUser.id === currentUser.id) return;
+    setDeletingUserId(targetUser.id);
+    setFeedback(null);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUser.id)}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      const data = await safeJson<{ error?: string; deleted?: boolean }>(res);
+      if (!res.ok) {
+        throw new Error(data.error || 'Barataa haquun hin milkoofne.');
+      }
+
+      setConfirmDeleteUserId(null);
+      setRegisteredUsers((prev) => prev.filter((u) => u.id !== targetUser.id));
+      setFeedback({
+        type: 'success',
+        text: `Barataan ${targetUser.fullName} (@${targetUser.username}) milkaa’inaan haqameera.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        text: extractErrorMessage(err, 'Barataa haquun hin danda’amne.'),
+      });
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -499,10 +542,10 @@ export function AdminSettingsView({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#e4e0d8] pb-5 animate-enter">
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16]">
+          <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16] text-3d-gold">
             Bulchiinsa Giddugalaa · Admin Workbench
           </p>
-          <h1 className="font-editorial text-2xl sm:text-3xl font-semibold text-[#171614] tracking-tight">
+          <h1 className="font-editorial text-2xl sm:text-3xl font-semibold text-[#171614] tracking-tight text-3d-display">
             Admin Settings — Faayilootaa fi Qindaa’ina Chatbot
           </h1>
           <p className="text-sm text-[#52504b] mt-1">
@@ -512,8 +555,16 @@ export function AdminSettingsView({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
+            onClick={onOpenNotes}
+            className="btn-3d-secondary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#142d4c] rounded-xl cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <NotebookPen className="w-4 h-4 text-[#9a6b16]" aria-hidden="true" />
+            <span>Yaadannoo Admin Bani</span>
+          </button>
+          <button
+            type="button"
             onClick={onEnterStudentSection}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="btn-3d-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0"
           >
             <span>Kutaa Barataa Seeni</span>
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -547,7 +598,7 @@ export function AdminSettingsView({
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
               <BookOpen className="w-5 h-5 text-[#142d4c]" />
-              <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+              <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
                 Faayila Macaafa Qulqulluu Bilisaa (Afaan Oromo &amp; English — 100% Free)
               </h2>
             </div>
@@ -561,7 +612,7 @@ export function AdminSettingsView({
         </div>
 
         {!bibleReady ? (
-          <div className="p-4 rounded-xl bg-[#f7f6f2] border border-[#e4e0d8] flex flex-wrap items-center justify-between gap-3">
+          <div className="sanctuary-subsurface p-4 rounded-xl flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-zinc-700">
               Faayila Macaafa Qulqulluu guutuu (66 kitaabota) Afaan Oromo fi English tola fe’i.
             </p>
@@ -569,7 +620,7 @@ export function AdminSettingsView({
               type="button"
               onClick={handleInstallBible}
               disabled={bibleBusy !== null}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+              className="btn-3d-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
             >
               {bibleBusy === 'install' ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -583,7 +634,7 @@ export function AdminSettingsView({
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-zinc-100">
               <span className="text-xs font-medium text-zinc-600">Kakuu Filadhu:</span>
-              <div className="inline-flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-lg">
+              <div className="tray-3d inline-flex items-center gap-1 p-1 rounded-xl">
                 {(
                   [
                     { id: 'all', label: `Hunduma (${bibleBooks.length})` },
@@ -609,9 +660,9 @@ export function AdminSettingsView({
                         }
                       }
                     }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums ${
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums ${
                       bibleTestament === opt.id
-                        ? 'bg-white text-[#142d4c] shadow-sm'
+                        ? 'tab-3d-active text-[#142d4c]'
                         : 'text-zinc-600 hover:text-zinc-900'
                     }`}
                   >
@@ -630,7 +681,7 @@ export function AdminSettingsView({
                   id="bible-book-select"
                   value={selectedBookId}
                   onChange={(e) => setSelectedBookId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 >
                   {(bibleTestament === 'all' || bibleTestament === 'old') && (
                     <optgroup label="Kakuu Moofaa (Old Testament — 39)">
@@ -667,7 +718,7 @@ export function AdminSettingsView({
                   onChange={(e) =>
                     setSelectedBibleLang(e.target.value as 'bilingual' | 'om' | 'en')
                   }
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 >
                   <option value="bilingual">Afaan Oromo + English</option>
                   <option value="om">Afaan Oromo Qofa</option>
@@ -680,7 +731,7 @@ export function AdminSettingsView({
                   type="button"
                   onClick={() => handleImportBibleBook()}
                   disabled={bibleBusy !== null}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+                  className="btn-3d-primary flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
                 >
                   {bibleBusy === 'import' ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -694,7 +745,7 @@ export function AdminSettingsView({
                   type="button"
                   onClick={handleDownloadBibleBook}
                   disabled={bibleBusy !== null}
-                  className="inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-800 bg-white border border-[#e4e0d8] rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+                  className="btn-3d-secondary inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-800 rounded-xl cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
                 >
                   {bibleBusy === 'download' ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -757,17 +808,17 @@ export function AdminSettingsView({
         {/* Left 7 cols: Multi-File Upload or Create Lesson */}
         <section className="lg:col-span-7 sanctuary-card rounded-2xl p-6 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+            <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
               1. Faayiloota Chatbot &amp; Barnootaa Ol-Kaa’i
             </h2>
 
-            <div className="flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-lg">
+            <div className="tray-3d flex items-center gap-1 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setUploadMode('file')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                   uploadMode === 'file'
-                    ? 'bg-white text-zinc-900 shadow-sm'
+                    ? 'tab-3d-active text-zinc-900'
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
@@ -776,9 +827,9 @@ export function AdminSettingsView({
               <button
                 type="button"
                 onClick={() => setUploadMode('text')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                   uploadMode === 'text'
-                    ? 'bg-white text-zinc-900 shadow-sm'
+                    ? 'tab-3d-active text-zinc-900'
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
@@ -802,7 +853,7 @@ export function AdminSettingsView({
                   value={docTitle}
                   onChange={(e) => setDocTitle(e.target.value)}
                   placeholder="Fkn: Boqonnaa 4: Seenaa Daawit"
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 />
               </div>
 
@@ -816,7 +867,7 @@ export function AdminSettingsView({
                   value={docCategory}
                   onChange={(e) => setDocCategory(e.target.value)}
                   placeholder="Kakuu Moofaa / Haaraa"
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 />
               </div>
 
@@ -830,7 +881,7 @@ export function AdminSettingsView({
                   min={1}
                   value={docOrder}
                   onChange={(e) => setDocOrder(Number(e.target.value) || 1)}
-                  className="w-full px-3 py-2 text-sm font-mono tabular-nums bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm font-mono tabular-nums rounded-xl focus:outline-none"
                 />
               </div>
             </div>
@@ -839,7 +890,7 @@ export function AdminSettingsView({
               <div className="space-y-2">
                 <label
                   htmlFor="study-file-input"
-                  className="flex flex-col items-center justify-center border-2 border-dashed border-[#e4e0d8] rounded-xl p-8 bg-[#f7f6f2] hover:border-[#142d4c]/60 transition-colors cursor-pointer text-center"
+                  className="sanctuary-subsurface flex flex-col items-center justify-center border-2 border-dashed border-[#d8d0c0] rounded-xl p-8 hover:border-[#142d4c]/60 transition-colors cursor-pointer text-center"
                 >
                   <FileUp className="w-7 h-7 text-[#142d4c] mb-2" />
                   <p className="text-sm font-medium text-zinc-900">
@@ -879,7 +930,7 @@ export function AdminSettingsView({
                   value={lessonText}
                   onChange={(e) => setLessonText(e.target.value)}
                   placeholder="# Mata-duree&#10;&#10;Barreeffama barnoota Macaafa Qulqulluu fi luqqisiiwwan asitti barreessi..."
-                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
                 />
               </div>
             )}
@@ -887,7 +938,7 @@ export function AdminSettingsView({
             <button
               type="submit"
               disabled={busyAction}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer disabled:opacity-50"
+              className="btn-3d-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl cursor-pointer disabled:opacity-50"
             >
               {busyAction ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -903,12 +954,12 @@ export function AdminSettingsView({
 
         {/* Right 5 cols: Chatbot Persona, File-based Instructions & Grounding */}
         <section className="lg:col-span-5 sanctuary-card rounded-2xl p-6 space-y-5">
-          <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+          <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
             2. Qindaa’ina &amp; Qajeelfama Chatbot AI
           </h2>
 
           {/* Direct File Upload for Chatbot Instructions */}
-          <div className="p-4 rounded-xl bg-[#f7f6f2] border border-[#e4e0d8] space-y-2.5">
+          <div className="sanctuary-subsurface p-4 rounded-xl space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-zinc-900">
                 Faayila Qajeelfamaa / Odeeffannoo Chatbot Ol-Kaa’i
@@ -922,7 +973,7 @@ export function AdminSettingsView({
             <p className="text-xs text-zinc-600">
               Qajeelfama ykn odeeffannoo Chatbotiin hordofuu qabu faayila (.pdf, .txt, .md, .csv, .json) irraa kallattiin fe’i.
             </p>
-            <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-[#142d4c] bg-white border border-[#142d4c]/30 rounded-lg hover:bg-[#142d4c]/5 transition-colors cursor-pointer">
+            <label className="btn-3d-secondary inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-[#142d4c] rounded-xl cursor-pointer">
               {uploadingInstructionFile ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
@@ -948,7 +999,7 @@ export function AdminSettingsView({
                 type="text"
                 value={settings.tutorName}
                 onChange={(e) => setSettings((s) => ({ ...s, tutorName: e.target.value }))}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -963,7 +1014,7 @@ export function AdminSettingsView({
                   onChange={(e) =>
                     setSettings((s) => ({ ...s, languageMode: e.target.value as LanguageMode }))
                   }
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 >
                   <option value="om">Afaan Oromo</option>
                   <option value="bilingual">Oromo + English</option>
@@ -984,7 +1035,7 @@ export function AdminSettingsView({
                       groundingMode: e.target.value as GroundingMode,
                     }))
                   }
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                  className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
                 >
                   <option value="files_plus_bible">Faayila Admin + Macaafa Qulqulluu</option>
                   <option value="strict_files">Faayila Admin Qofa (Strict)</option>
@@ -1001,7 +1052,7 @@ export function AdminSettingsView({
                 rows={2}
                 value={settings.welcomeGreeting}
                 onChange={(e) => setSettings((s) => ({ ...s, welcomeGreeting: e.target.value }))}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -1016,14 +1067,14 @@ export function AdminSettingsView({
                 onChange={(e) =>
                   setSettings((s) => ({ ...s, systemInstructions: e.target.value }))
                 }
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
             <button
               type="submit"
               disabled={busyAction}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-zinc-900 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
+              className="btn-3d-primary w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               <span>Qindaa’ina Chatbot Ol-Kaa’i</span>
@@ -1036,7 +1087,7 @@ export function AdminSettingsView({
       <section className="sanctuary-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#e4e0d8] flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+            <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
               3. Faayiloota Barnootaa Ol-Kaa’aman ({documents.length})
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
@@ -1044,7 +1095,7 @@ export function AdminSettingsView({
             </p>
           </div>
 
-          <div className="inline-flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-lg">
+          <div className="tray-3d inline-flex items-center gap-1 p-1 rounded-xl">
             {(
               [
                 { id: 'all', label: 'Hundaa' },
@@ -1056,9 +1107,9 @@ export function AdminSettingsView({
                 key={tab.id}
                 type="button"
                 onClick={() => setDocTestamentFilter(tab.id)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
                   docTestamentFilter === tab.id
-                    ? 'bg-white text-zinc-900 shadow-sm'
+                    ? 'tab-3d-active text-zinc-900'
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
@@ -1120,14 +1171,14 @@ export function AdminSettingsView({
                       <button
                         type="button"
                         onClick={() => onPreviewDoc(doc)}
-                        className="px-2.5 py-1 text-xs font-medium text-zinc-700 border border-[#e4e0d8] rounded-md hover:bg-[#f2efe9] cursor-pointer"
+                        className="btn-3d-secondary px-2.5 py-1 text-xs font-medium text-zinc-700 rounded-lg cursor-pointer"
                       >
                         Ilaali
                       </button>
                       <button
                         type="button"
                         onClick={() => handleToggleActive(doc)}
-                        className="px-2.5 py-1 text-xs font-medium text-zinc-700 border border-[#e4e0d8] rounded-md hover:bg-[#f2efe9] cursor-pointer"
+                        className="btn-3d-secondary px-2.5 py-1 text-xs font-medium text-zinc-700 rounded-lg cursor-pointer"
                       >
                         {doc.active ? 'Dhoksi' : 'Mul’isi'}
                       </button>
@@ -1135,7 +1186,7 @@ export function AdminSettingsView({
                         type="button"
                         onClick={() => handleDeleteDoc(doc)}
                         aria-label={`Delete ${doc.title}`}
-                        className="p-1.5 text-zinc-500 hover:text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                        className="p-1.5 text-zinc-500 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1160,7 +1211,7 @@ export function AdminSettingsView({
         <section className="lg:col-span-5 sanctuary-card rounded-2xl p-6 space-y-5">
           <div className="flex items-center gap-2.5">
             <KeyRound className="w-5 h-5 text-[#142d4c]" />
-            <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+            <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
               4. Maqaa fi Password Admin Jijjiiri
             </h2>
           </div>
@@ -1175,7 +1226,22 @@ export function AdminSettingsView({
                 type="text"
                 value={adminFullName}
                 onChange={(e) => setAdminFullName(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="admin-email" className="block text-xs font-medium text-zinc-700">
+                Email Seenumsa Admin (Admin Login Email)
+              </label>
+              <input
+                id="admin-email"
+                type="email"
+                required
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="danielbiranu.23@gmail.com"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -1189,7 +1255,7 @@ export function AdminSettingsView({
                 required
                 value={adminUsername}
                 onChange={(e) => setAdminUsername(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
@@ -1203,14 +1269,14 @@ export function AdminSettingsView({
                 value={adminNewPassword}
                 onChange={(e) => setAdminNewPassword(e.target.value)}
                 placeholder="Password haaraa galchi (qubee/lakkoofsa 4+)"
-                className="w-full px-3 py-2 text-sm bg-white border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
               />
             </div>
 
             <button
               type="submit"
               disabled={busyAction}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer disabled:opacity-50"
+              className="btn-3d-primary w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               <span>Maqaa fi Password Admin Haaromsi</span>
@@ -1222,7 +1288,7 @@ export function AdminSettingsView({
           <div className="px-6 py-4 border-b border-[#e4e0d8] flex items-center gap-2.5">
             <Users className="w-5 h-5 text-[#142d4c]" />
             <div>
-              <h2 className="font-editorial text-xl font-semibold text-zinc-900">
+              <h2 className="font-editorial text-xl font-semibold text-zinc-900 text-3d-subtle">
                 5. Fayyadamttoota Galmaa’an ({registeredUsers.length})
               </h2>
               <p className="text-xs text-zinc-500">
@@ -1236,20 +1302,75 @@ export function AdminSettingsView({
               <thead>
                 <tr className="border-b border-[#e4e0d8] bg-[#f7f6f2] text-xs font-medium text-zinc-500">
                   <th className="py-3 px-4">Maqaa Guutuu</th>
+                  <th className="py-3 px-4">Email</th>
                   <th className="py-3 px-4">Username</th>
                   <th className="py-3 px-4">Gahee</th>
+                  <th className="py-3 px-4 text-right">Gochoota</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 text-sm">
-                {registeredUsers.map((u) => (
-                  <tr key={u.id}>
-                    <td className="py-3 px-4 font-medium text-zinc-900">{u.fullName}</td>
-                    <td className="py-3 px-4 font-mono text-xs text-zinc-700">{u.username}</td>
-                    <td className="py-3 px-4 text-xs text-zinc-600">
-                      {u.role === 'admin' ? 'Admin' : 'Barataa'}
+                {registeredUsers.map((u) => {
+                  const isProtected = u.role === 'admin' || u.id === currentUser.id;
+                  const isConfirming = confirmDeleteUserId === u.id;
+                  const isDeleting = deletingUserId === u.id;
+
+                  return (
+                    <tr key={u.id} className="hover:bg-zinc-50/70">
+                      <td className="py-3 px-4 font-medium text-zinc-900">{u.fullName}</td>
+                      <td className="py-3 px-4 text-xs text-zinc-700 break-all">
+                        {u.email || '—'}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-zinc-700">{u.username}</td>
+                      <td className="py-3 px-4 text-xs text-zinc-600">
+                        {u.role === 'admin' ? 'Admin' : 'Barataa'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {isProtected ? (
+                          <span className="text-[11px] font-medium text-zinc-400">
+                            Hin haqamu
+                          </span>
+                        ) : isConfirming ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u)}
+                              disabled={isDeleting}
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              {isDeleting && <Loader2 className="w-3 h-3 animate-spin" />}
+                              <span>Mirkaneessi</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteUserId(null)}
+                              disabled={isDeleting}
+                              className="btn-3d-secondary px-2.5 py-1 text-xs font-medium text-zinc-700 rounded-lg cursor-pointer"
+                            >
+                              Dhiisi
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteUserId(u.id)}
+                            aria-label={`Barataa ${u.fullName} haqi`}
+                            className="btn-3d-secondary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Haqi</span>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {registeredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-sm text-zinc-500">
+                      Fayyadamaan galmaa’e hin jiru.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

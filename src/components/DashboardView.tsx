@@ -1,6 +1,5 @@
-import { ArrowRight, BookOpen, CheckCircle2, ClipboardCheck, FileText, MessageSquare } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, ClipboardCheck, FileText, Mail, MapPin, MessageSquare, NotebookPen, Phone } from 'lucide-react';
 import { useState } from 'react';
-import studyHeroImg from '../assets/images/sanctuary_study_desk_1794836323351.jpg';
 import type {
   BibleReferenceTarget,
   ChatThread,
@@ -8,6 +7,7 @@ import type {
   StudentProgress,
   StudyDocument,
 } from '../types';
+import { Bible3DShowcase } from './Bible3DShowcase';
 import { InlineChatPanel } from './InlineChatPanel';
 
 interface DashboardViewProps {
@@ -26,6 +26,7 @@ interface DashboardViewProps {
   onTakeQuiz: (doc: StudyDocument) => void;
   onToggleComplete: (docId: string, completed: boolean) => void;
   onOpenBible: () => void;
+  onOpenNotes: () => void;
   onOpenAdmin: () => void;
   onOpenBibleRef: (target: BibleReferenceTarget) => void;
 }
@@ -52,10 +53,10 @@ export function DashboardView({
   onTakeQuiz,
   onToggleComplete,
   onOpenBible,
+  onOpenNotes,
   onOpenAdmin,
   onOpenBibleRef,
 }: DashboardViewProps) {
-  const [imgFailed, setImgFailed] = useState(false);
   const [testamentFilter, setTestamentFilter] = useState<'all' | 'old' | 'new'>('all');
 
   const filteredDocuments = documents.filter((doc) => {
@@ -76,21 +77,21 @@ export function DashboardView({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-10 animate-enter">
-      {/* Editorial Hero Split */}
+      {/* 3D Editorial Hero Split */}
       <section className="sanctuary-card rounded-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch">
         <div className="lg:col-span-7 p-7 sm:p-9 lg:p-11 flex flex-col justify-between gap-7">
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16]">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16] text-3d-gold">
               <span>Giddugala Barnoota Macaafa Qulqulluu</span>
               <span aria-hidden="true">·</span>
               <span>{settings.tutorName}</span>
             </div>
 
-            <p className="text-sm font-medium text-emerald-800">
+            <p className="text-sm font-semibold text-emerald-800">
               Baga nagaan dhuftan! Akkam jirtu?
             </p>
 
-            <h1 className="font-editorial text-3xl sm:text-4xl font-semibold text-[#171614] tracking-tight leading-[1.15] text-balance">
+            <h1 className="font-editorial text-3xl sm:text-4xl font-bold text-[#171614] text-3d-display tracking-tight leading-[1.15] text-balance">
               Barnoota Macaafa Qulqulluu Jalqaba hanga Xummuraatti
             </h1>
 
@@ -103,7 +104,7 @@ export function DashboardView({
             <button
               type="button"
               onClick={() => onStartChat('all')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="btn-3d-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
             >
               <MessageSquare className="w-4 h-4 text-[#f5d08a]" aria-hidden="true" />
               <span>Chatbot Fuula Guutuutti Bani</span>
@@ -112,7 +113,7 @@ export function DashboardView({
             <button
               type="button"
               onClick={onOpenBible}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#142d4c] bg-[#f7f6f2] border border-[#142d4c]/25 rounded-lg hover:bg-[#f2efe9] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="btn-3d-secondary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#142d4c] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
             >
               <BookOpen className="w-4 h-4" aria-hidden="true" />
               <span>Macaafa Qulqulluu Dubbisi</span>
@@ -122,52 +123,90 @@ export function DashboardView({
               <button
                 type="button"
                 onClick={() => onReadLesson(nextLesson)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f7f6f2] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className="btn-3d-secondary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#171614] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <span>Boqonnaa Itti Aanu Dubbisi</span>
                 <ArrowRight className="w-4 h-4 text-[#9a6b16]" aria-hidden="true" />
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={onOpenNotes}
+              className="btn-3d-secondary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#142d4c] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <NotebookPen className="w-4 h-4 text-[#9a6b16]" aria-hidden="true" />
+              <span>{isAdmin ? 'Yaadannoo Admin' : 'Yaadannoo Koo'}</span>
+            </button>
           </div>
         </div>
 
-        <div className="lg:col-span-5 relative min-h-[250px] lg:min-h-full bg-[#f2efe9] border-t lg:border-t-0 lg:border-l border-[#e4e0d8]">
-          {!imgFailed ? (
-            <>
+        {/* Right 5 cols: Interactive 3D Open Bible + Brand Logo & Contact Directly Under 3D */}
+        <div className="lg:col-span-5 relative min-h-[290px] lg:min-h-[340px] bg-gradient-to-br from-[#17365d] via-[#122b49] to-[#0b192b] border-t lg:border-t-0 lg:border-l border-[#d9d2c4] flex flex-col">
+          <div className="flex-1 min-h-[240px] relative">
+            <Bible3DShowcase variant="hero" />
+          </div>
+          <div className="px-5 py-3.5 border-t border-white/15 bg-[#0b192b]/90 text-white space-y-2">
+            <div className="flex items-center gap-3">
               <img
-                src={studyHeroImg}
-                alt="Macaafa Qulqulluu fi yaadannoo qo'annoo minjaala irra jiru"
-                referrerPolicy="no-referrer"
-                onError={() => setImgFailed(true)}
-                className="w-full h-full object-cover"
+                src="/assets/aistudio/image_27ab89bd.png"
+                alt="Qajeelcha Macaafaa Qulqulluu — Daniel Biranu Logo"
+                className="w-11 h-11 rounded-xl object-cover object-top border-2 border-[#d4a24c] shadow-md shrink-0"
               />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0b192b]/80 via-[#0b192b]/30 to-transparent px-6 py-4 text-white">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-[#f5d08a] font-medium">
-                  Sagalee Waaqayyoo · Afaan Oromo &amp; English
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="brand-3d-viewport flex-1 min-w-0">
+                    <div className="brand-3d-marquee font-editorial text-xs font-bold text-3d-brand-sculpture-light">
+                      <span>Qajeelcha Macaafaa Qulqulluu · Daniel Biranu</span>
+                      <span aria-hidden="true" className="text-[#d4a24c]">✦</span>
+                      <span aria-hidden="true">Qajeelcha Macaafaa Qulqulluu · Daniel Biranu</span>
+                      <span aria-hidden="true" className="text-[#d4a24c]">✦</span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono text-zinc-300 shrink-0">Yoh 3:16</span>
+                </div>
+                <p className="inline-flex items-center gap-1 text-[11px] text-zinc-300">
+                  <MapPin className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                  <span>Bale, Oromia</span>
                 </p>
               </div>
-            </>
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-[#142d4c] to-[#0e2139] text-white text-center gap-3">
-              <BookOpen className="w-10 h-10 text-[#f5d08a]" />
-              <p className="font-editorial text-lg font-medium">Barnoota Macaafa Qulqulluu</p>
             </div>
-          )}
+
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-2 border-t border-white/10 text-[11px] text-zinc-200">
+              <a
+                href="mailto:danielbiranu.23@gmail.com"
+                className="inline-flex items-center gap-1.5 hover:text-[#f5d08a] transition-colors"
+              >
+                <Mail className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                <span>danielbiranu.23@gmail.com</span>
+              </a>
+              <a
+                href="tel:+251932387559"
+                className="inline-flex items-center gap-1.5 hover:text-[#f5d08a] transition-colors"
+              >
+                <Phone className="w-3 h-3 text-[#f5d08a] shrink-0" aria-hidden="true" />
+                <span>+251932387559</span>
+              </a>
+            </div>
+            <p className="text-[10.5px] text-zinc-300/90 pt-1 border-t border-white/10">
+              © 2026 Daniel Biranu. Mirgi hundi eegamaadha!
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* Progress Strip — Unboxed Architectural Tabular Figures */}
+      {/* 3D Progress Strip — Architectural Tabular Figures */}
       <section
         aria-label="Adeemsa barnootaa"
         className="sanctuary-card rounded-2xl overflow-hidden"
       >
-        <div className="h-[3px] w-full bg-[#f2efe9]">
+        <div className="h-[4px] w-full bg-[#eae4d8]">
           <div
-            className="h-full bg-[#142d4c] transition-all duration-300"
+            className="h-full bg-gradient-to-r from-[#142d4c] to-[#9a6b16] transition-all duration-300"
             style={{ width: `${completionPct}%` }}
           />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#e4e0d8]">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#dfd9cd]">
           <div className="px-6 py-5 flex items-baseline justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.1em] font-semibold text-[#76736c]">
@@ -175,7 +214,7 @@ export function DashboardView({
               </p>
               <p className="text-sm text-[#52504b] mt-1">Boqonnaawwan qophaa’oo</p>
             </div>
-            <span className="font-mono tabular-nums text-2xl sm:text-[28px] font-semibold text-[#171614]">
+            <span className="font-mono tabular-nums text-2xl sm:text-[30px] font-bold text-[#171614] text-3d-display">
               {documents.length}
             </span>
           </div>
@@ -187,7 +226,7 @@ export function DashboardView({
               </p>
               <p className="text-sm text-[#52504b] mt-1">Boqonnaalee xummuraman</p>
             </div>
-            <span className="font-mono tabular-nums text-2xl sm:text-[28px] font-semibold text-[#142d4c]">
+            <span className="font-mono tabular-nums text-2xl sm:text-[30px] font-bold text-[#142d4c] text-3d-display">
               {completedCount}/{documents.length}
             </span>
           </div>
@@ -199,7 +238,7 @@ export function DashboardView({
               </p>
               <p className="text-sm text-[#52504b] mt-1">Qormaata xummurame</p>
             </div>
-            <span className="font-mono tabular-nums text-2xl sm:text-[28px] font-semibold text-[#9a6b16]">
+            <span className="font-mono tabular-nums text-2xl sm:text-[30px] font-bold text-[#9a6b16] text-3d-gold">
               {quizzesTaken}/{documents.length}
             </span>
           </div>
@@ -209,9 +248,9 @@ export function DashboardView({
       {/* 2-Column Workspace: Guided Study Path (Left 7) + Always-Open Live Chatbot (Right 5) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <section className="lg:col-span-7 space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#e4e0d8] pb-4">
+          <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#dfd9cd] pb-4">
             <div>
-              <h2 className="font-editorial text-2xl font-semibold text-[#171614] tracking-tight">
+              <h2 className="font-editorial text-2xl font-bold text-[#171614] text-3d-subtle tracking-tight">
                 Tartiiba Barnootaa — Boqonnaa Boqonnaan
               </h2>
               <p className="text-sm text-[#52504b] mt-1">
@@ -222,7 +261,7 @@ export function DashboardView({
               <button
                 type="button"
                 onClick={onOpenAdmin}
-                className="text-sm font-medium text-[#142d4c] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+                className="btn-3d-secondary px-3 py-1.5 rounded-lg text-xs font-semibold text-[#142d4c] whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Admin: Faayila dabali →
               </button>
@@ -230,8 +269,8 @@ export function DashboardView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-xs font-medium text-[#52504b]">Kakuu Filadhu:</span>
-            <div className="inline-flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-xl">
+            <span className="text-xs font-semibold text-[#52504b]">Kakuu Filadhu:</span>
+            <div className="tray-3d inline-flex items-center gap-1 p-1 rounded-xl">
               {(
                 [
                   { id: 'all', label: 'Hundaa' },
@@ -245,7 +284,7 @@ export function DashboardView({
                   onClick={() => setTestamentFilter(tab.id)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     testamentFilter === tab.id
-                      ? 'bg-white text-[#142d4c] shadow-xs'
+                      ? 'tab-3d-active text-[#142d4c] font-semibold'
                       : 'text-[#52504b] hover:text-[#171614]'
                   }`}
                 >
@@ -277,7 +316,7 @@ export function DashboardView({
               )}
             </div>
           ) : (
-            <div className="sanctuary-card rounded-2xl divide-y divide-[#e4e0d8] overflow-hidden">
+            <div className="space-y-4">
               {filteredDocuments.map((doc) => {
                 const isDone = progress.completedDocIds.includes(doc.id);
                 const quizInfo = progress.quizScores[doc.id];
@@ -285,22 +324,22 @@ export function DashboardView({
                 return (
                   <div
                     key={doc.id}
-                    className="p-5 sm:p-6 space-y-4 hover:bg-[#f7f6f2]/80 transition-colors"
+                    className="sanctuary-card-3d rounded-2xl p-5 sm:p-6 space-y-4"
                   >
                     <div className="flex items-start gap-4">
-                      <span className="font-editorial text-2xl font-semibold tabular-nums text-[#142d4c]/35 leading-none pt-0.5 select-none shrink-0">
+                      <span className="font-editorial text-2xl font-bold tabular-nums text-[#142d4c]/40 text-3d-subtle leading-none pt-0.5 select-none shrink-0">
                         {String(doc.order).padStart(2, '0')}
                       </span>
 
                       <div className="space-y-1.5 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2 text-xs text-[#76736c]">
-                          <span className="font-medium text-[#9a6b16]">{doc.category}</span>
+                          <span className="font-semibold text-[#9a6b16]">{doc.category}</span>
                           <span aria-hidden="true">·</span>
                           <span className="font-mono tabular-nums">{formatBytes(doc.sizeBytes)}</span>
                           {isDone && (
                             <>
                               <span aria-hidden="true">·</span>
-                              <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                                 <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                                 Xummurameera
                               </span>
@@ -309,14 +348,14 @@ export function DashboardView({
                           {quizInfo && (
                             <>
                               <span aria-hidden="true">·</span>
-                              <span className="font-mono tabular-nums text-[#9a6b16] font-medium">
+                              <span className="font-mono tabular-nums text-[#9a6b16] font-semibold">
                                 Qormaata: {quizInfo.score}/{quizInfo.total}
                               </span>
                             </>
                           )}
                         </div>
 
-                        <h3 className="text-base sm:text-lg font-semibold text-[#171614] leading-snug">
+                        <h3 className="text-base sm:text-lg font-semibold text-[#171614] text-3d-subtle leading-snug">
                           {doc.title}
                         </h3>
                         <p className="text-sm text-[#52504b] line-clamp-2 leading-relaxed">{doc.summary}</p>
@@ -328,10 +367,10 @@ export function DashboardView({
                         type="button"
                         onClick={() => onToggleComplete(doc.id, !isDone)}
                         aria-label={isDone ? 'Mark as incomplete' : 'Mark as completed'}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                           isDone
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-white text-[#52504b] border-[#e4e0d8] hover:bg-[#f7f6f2]'
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 border-b-3 hover:bg-emerald-100'
+                            : 'btn-3d-secondary text-[#52504b]'
                         }`}
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -341,7 +380,7 @@ export function DashboardView({
                       <button
                         type="button"
                         onClick={() => onReadLesson(doc)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f7f6f2] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        className="btn-3d-secondary inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#171614] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
                       >
                         <BookOpen className="w-3.5 h-3.5 text-[#142d4c]" aria-hidden="true" />
                         <span>Dubbisi</span>
@@ -350,7 +389,7 @@ export function DashboardView({
                       <button
                         type="button"
                         onClick={() => onTakeQuiz(doc)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f7f6f2] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        className="btn-3d-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#171614] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
                       >
                         <ClipboardCheck className="w-3.5 h-3.5 text-[#9a6b16]" aria-hidden="true" />
                         <span>Qormaata</span>
@@ -362,7 +401,7 @@ export function DashboardView({
                           onChangeFocusDoc(doc.id);
                           onSelectThread(null);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        className="btn-3d-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
                       >
                         <MessageSquare className="w-3.5 h-3.5 text-[#f5d08a]" aria-hidden="true" />
                         <span>Asuma Irratti Gaafadhu</span>

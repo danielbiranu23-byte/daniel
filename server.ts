@@ -5,7 +5,7 @@ import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import multer from 'multer';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { MongoClient, type Db } from 'mongodb';
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 import pg from 'pg';
@@ -80,6 +80,7 @@ interface BibleHighlight {
 interface UserAccount {
   id: string;
   username: string;
+  email?: string;
   fullName: string;
   role: 'admin' | 'user';
   passwordHash: string;
@@ -93,12 +94,27 @@ interface SessionRecord {
   createdAt: string;
 }
 
+interface PersonalNote {
+  id: string;
+  userId: string;
+  ownerRole: 'admin' | 'user';
+  title: string;
+  content: string;
+  category: string;
+  scriptureRef?: string;
+  pinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface StoreData {
   settings: AdminSettings;
   documents: StudyDocument[];
   chats: ChatThread[];
   progress: StudentProgress;
   users: UserAccount[];
+  notes?: PersonalNote[];
+  deletedUserIds?: string[];
   sessions: Record<string, SessionRecord>;
   bibleSeeded?: boolean;
 }
@@ -748,6 +764,12 @@ function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
+function normalizeEmail(email?: string): string {
+  return (email || '').trim().toLowerCase();
+}
+
+const ADMIN_PRIMARY_EMAIL = 'danielbiranu.23@gmail.com';
+
 function createStarterStore(): StoreData {
   const now = new Date().toISOString();
   const starterDocs: StudyDocument[] = [
@@ -850,6 +872,7 @@ Jireenyi Kiristaanaa ija hafuuraatiin beekama:
   const defaultAdmin: UserAccount = {
     id: 'user-admin-default',
     username: 'admin',
+    email: ADMIN_PRIMARY_EMAIL,
     fullName: 'Admin Giddugalaa',
     role: 'admin',
     passwordHash: hashPassword('admin123'),
@@ -884,6 +907,7 @@ Jireenyi Kiristaanaa ija hafuuraatiin beekama:
       quizScores: {},
     },
     users: [defaultAdmin, defaultStudent],
+    notes: [],
     sessions: {},
   };
 }
@@ -908,6 +932,8 @@ let supabaseStatus:
   | 'rls_blocked'
   | 'connection_failed' = 'not_configured';
 let lastSupabaseSyncStatus: 'ok' | 'rls_blocked' | 'error' = 'ok';
+let supabaseUsersHasEmailCol: boolean | null = null;
+let supabaseHasNotesTable: boolean | null = null;
 const syncedSupabaseDocSignatures = new Map<string, string>();
 
 function getDocSyncSignature(d: StudyDocument): string {
@@ -1612,6 +1638,7 @@ async function ensureSupabasePgSchema(pool: PgPool): Promise<void> {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
+      email TEXT NULL,
       full_name TEXT NOT NULL,
       role TEXT NOT NULL,
       password_hash TEXT NOT NULL,
@@ -1620,6 +1647,7 @@ async function ensureSupabasePgSchema(pool: PgPool): Promise<void> {
       created_at TEXT NOT NULL
     )
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NULL`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_threads (
       id TEXT PRIMARY KEY,
@@ -1646,6 +1674,23 @@ async function ensureSupabasePgSchema(pool: PgPool): Promise<void> {
       updated_at TEXT NOT NULL
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_notes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      owner_role TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Yaadannoo',
+      scripture_ref TEXT NULL,
+      pinned BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_user_notes_user_role ON user_notes (user_id, owner_role, updated_at DESC)`
+  );
 }
 
 function hydrateStoreFromSqlRows(
@@ -1654,7 +1699,8 @@ function hydrateStoreFromSqlRows(
   usersRows: Array<Record<string, unknown>>,
   chatsRows: Array<Record<string, unknown>>,
   sessionsRows: Array<Record<string, unknown>>,
-  metaRows: Array<Record<string, unknown>>
+  metaRows: Array<Record<string, unknown>>,
+  notesRows: Array<Record<string, unknown>> = []
 ): StoreData {
   const starter = createStarterStore();
   const sRow = settingsRows[0];
@@ -1695,6 +1741,7 @@ function hydrateStoreFromSqlRows(
       ? usersRows.map((row) => ({
           id: String(row.id),
           username: String(row.username),
+          email: row.email ? normalizeEmail(String(row.email)) : undefined,
           fullName: String(row.full_name || row.username),
           role: row.role === 'admin' ? 'admin' : 'user',
           passwordHash: String(row.password_hash),
@@ -1706,6 +1753,12 @@ function hydrateStoreFromSqlRows(
           createdAt: String(row.created_at || new Date().toISOString()),
         }))
       : starter.users;
+
+  // Ensure primary admin always retains primary email for direct email+password sign-in
+  const primaryAdmin = users.find((u) => u.id === 'user-admin-default') || users.find((u) => u.role === 'admin');
+  if (primaryAdmin && !primaryAdmin.email) {
+    primaryAdmin.email = ADMIN_PRIMARY_EMAIL;
+  }
 
   const chats: ChatThread[] = chatsRows.map((row) => ({
     id: String(row.id),
@@ -1725,6 +1778,19 @@ function hydrateStoreFromSqlRows(
     };
   }
 
+  const notes: PersonalNote[] = notesRows.map((row) => ({
+    id: String(row.id),
+    userId: String(row.user_id),
+    ownerRole: row.owner_role === 'admin' ? 'admin' : 'user',
+    title: String(row.title || 'Yaadannoo'),
+    content: String(row.content || ''),
+    category: String(row.category || 'Yaadannoo'),
+    scriptureRef: row.scripture_ref ? String(row.scripture_ref) : undefined,
+    pinned: Boolean(row.pinned),
+    createdAt: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  }));
+
   const mRow = metaRows[0];
   const hydrated: StoreData = {
     settings,
@@ -1735,6 +1801,7 @@ function hydrateStoreFromSqlRows(
       quizScores: {},
     }),
     users,
+    notes,
     sessions: sessionsMap,
     bibleSeeded: mRow ? Boolean(mRow.bible_seeded) : undefined,
   };
@@ -1760,6 +1827,46 @@ function hydrateStoreFromSqlRows(
   }
 
   return hydrated;
+}
+
+function preserveLocalFieldsBeforeSqlMigration(
+  hydrated: StoreData,
+  preserveNotes: boolean
+): void {
+  try {
+    if (!fs.existsSync(STORE_PATH)) return;
+    const raw = fs.readFileSync(STORE_PATH, 'utf8');
+    if (!raw.trim()) return;
+    const localStore = JSON.parse(raw) as Partial<StoreData>;
+
+    if (Array.isArray(localStore.users)) {
+      const localById = new Map<string, UserAccount>();
+      const localByUsername = new Map<string, UserAccount>();
+      for (const lu of localStore.users) {
+        if (lu?.id) localById.set(lu.id, lu);
+        if (lu?.username) localByUsername.set(normalizeUsername(lu.username), lu);
+      }
+      for (const u of hydrated.users) {
+        if (!u.email) {
+          const matched = localById.get(u.id) || localByUsername.get(normalizeUsername(u.username));
+          if (matched?.email) {
+            u.email = normalizeEmail(matched.email);
+          }
+        }
+      }
+    }
+
+    if (
+      preserveNotes &&
+      Array.isArray(localStore.notes) &&
+      localStore.notes.length > 0 &&
+      (!hydrated.notes || hydrated.notes.length === 0)
+    ) {
+      hydrated.notes = localStore.notes;
+    }
+  } catch {
+    // Ignore unreadable local cache during pre-migration preservation
+  }
 }
 
 async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
@@ -1843,10 +1950,11 @@ async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
     for (const u of snapshot.users) {
       await client.query(
         `INSERT INTO users
-          (id, username, full_name, role, password_hash, progress_json, highlights_json, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          (id, username, email, full_name, role, password_hash, progress_json, highlights_json, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (id) DO UPDATE SET
           username = EXCLUDED.username,
+          email = EXCLUDED.email,
           full_name = EXCLUDED.full_name,
           role = EXCLUDED.role,
           password_hash = EXCLUDED.password_hash,
@@ -1856,6 +1964,7 @@ async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
         [
           u.id,
           u.username,
+          u.email ?? null,
           u.fullName,
           u.role,
           u.passwordHash,
@@ -1933,6 +2042,42 @@ async function syncStoreToSupabasePg(snapshot: StoreData): Promise<void> {
         now,
       ]
     );
+
+    const notesList = snapshot.notes ?? [];
+    const noteIds = notesList.map((n) => n.id);
+    for (const n of notesList) {
+      await client.query(
+        `INSERT INTO user_notes
+          (id, user_id, owner_role, title, content, category, scripture_ref, pinned, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          owner_role = EXCLUDED.owner_role,
+          title = EXCLUDED.title,
+          content = EXCLUDED.content,
+          category = EXCLUDED.category,
+          scripture_ref = EXCLUDED.scripture_ref,
+          pinned = EXCLUDED.pinned,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          n.id,
+          n.userId,
+          n.ownerRole,
+          n.title,
+          n.content,
+          n.category,
+          n.scriptureRef ?? null,
+          Boolean(n.pinned),
+          n.createdAt,
+          n.updatedAt,
+        ]
+      );
+    }
+    if (noteIds.length > 0) {
+      await client.query('DELETE FROM user_notes WHERE NOT (id = ANY($1::text[]))', [noteIds]);
+    } else {
+      await client.query('DELETE FROM user_notes');
+    }
 
     await client.query('COMMIT');
     lastSupabaseSyncStatus = 'ok';
@@ -2017,6 +2162,10 @@ async function syncStoreToSupabaseRest(
     ];
 
     if (snapshot.users.length > 0) {
+      if (supabaseUsersHasEmailCol === null || supabaseUsersHasEmailCol === false) {
+        const probe = await supabaseRestFetch(cfg, 'users?select=email&limit=1').catch(() => null);
+        supabaseUsersHasEmailCol = Boolean(probe?.ok);
+      }
       tasks.push(
         supabaseRestFetch(cfg, 'users?on_conflict=id', {
           method: 'POST',
@@ -2025,6 +2174,7 @@ async function syncStoreToSupabaseRest(
             snapshot.users.map((u) => ({
               id: u.id,
               username: u.username,
+              ...(supabaseUsersHasEmailCol ? { email: u.email ?? null } : {}),
               full_name: u.fullName,
               role: u.role,
               password_hash: u.passwordHash,
@@ -2120,6 +2270,34 @@ async function syncStoreToSupabaseRest(
       );
     }
 
+    const notesList = snapshot.notes ?? [];
+    if (supabaseHasNotesTable === null || supabaseHasNotesTable === false) {
+      const probeNotes = await supabaseRestFetch(cfg, 'user_notes?select=id&limit=1').catch(() => null);
+      supabaseHasNotesTable = Boolean(probeNotes?.ok);
+    }
+    if (supabaseHasNotesTable && notesList.length > 0) {
+      tasks.push(
+        supabaseRestFetch(cfg, 'user_notes?on_conflict=id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify(
+            notesList.map((n) => ({
+              id: n.id,
+              user_id: n.userId,
+              owner_role: n.ownerRole,
+              title: n.title,
+              content: n.content,
+              category: n.category,
+              scripture_ref: n.scriptureRef ?? null,
+              pinned: Boolean(n.pinned),
+              created_at: n.createdAt,
+              updated_at: n.updatedAt,
+            }))
+          ),
+        }).then((r) => assertRestOk('user_notes', r))
+      );
+    }
+
     await Promise.all(tasks);
     if (rlsBlocked) {
       lastSupabaseSyncStatus = 'rls_blocked';
@@ -2174,6 +2352,39 @@ async function syncStoreToSupabaseRest(
               .filter((row) => !keepTokens.has(row.token))
               .map((row) =>
                 supabaseRestFetch(cfg, `sessions?token=eq.${encodeURIComponent(row.token)}`, {
+                  method: 'DELETE',
+                })
+              )
+          );
+        }
+      })(),
+      (async () => {
+        const existingUsersResp = await supabaseRestFetch(cfg, 'users?select=id');
+        if (existingUsersResp.ok) {
+          const existingUsers = (await existingUsersResp.json()) as Array<{ id: string }>;
+          const keepUserIds = new Set(snapshot.users.map((u) => u.id));
+          await Promise.all(
+            existingUsers
+              .filter((row) => !keepUserIds.has(row.id))
+              .map((row) =>
+                supabaseRestFetch(cfg, `users?id=eq.${encodeURIComponent(row.id)}`, {
+                  method: 'DELETE',
+                })
+              )
+          );
+        }
+      })(),
+      (async () => {
+        if (!supabaseHasNotesTable) return;
+        const existingNotesResp = await supabaseRestFetch(cfg, 'user_notes?select=id');
+        if (existingNotesResp.ok) {
+          const existingNotes = (await existingNotesResp.json()) as Array<{ id: string }>;
+          const keepNoteIds = new Set(notesList.map((n) => n.id));
+          await Promise.all(
+            existingNotes
+              .filter((row) => !keepNoteIds.has(row.id))
+              .map((row) =>
+                supabaseRestFetch(cfg, `user_notes?id=eq.${encodeURIComponent(row.id)}`, {
                   method: 'DELETE',
                 })
               )
@@ -2250,13 +2461,14 @@ async function initSupabaseStore(): Promise<void> {
       supabaseStatus = 'connected_postgres';
       console.log('Supabase PostgreSQL connected');
 
-      const [settingsRes, docsRes, usersRes, chatsRes, sessionsRes, metaRes] = await Promise.all([
+      const [settingsRes, docsRes, usersRes, chatsRes, sessionsRes, metaRes, notesRes] = await Promise.all([
         supabasePgPool.query('SELECT * FROM app_settings WHERE id = $1', ['global']),
         supabasePgPool.query('SELECT * FROM study_documents ORDER BY sort_order ASC'),
         supabasePgPool.query('SELECT * FROM users'),
         supabasePgPool.query('SELECT * FROM chat_threads'),
         supabasePgPool.query('SELECT * FROM sessions'),
         supabasePgPool.query('SELECT * FROM app_meta WHERE id = $1', ['store_meta']),
+        supabasePgPool.query('SELECT * FROM user_notes ORDER BY pinned DESC, updated_at DESC'),
       ]);
 
       if (usersRes.rows.length === 0 && docsRes.rows.length === 0 && settingsRes.rows.length === 0) {
@@ -2272,8 +2484,10 @@ async function initSupabaseStore(): Promise<void> {
         usersRes.rows,
         chatsRes.rows,
         sessionsRes.rows,
-        metaRes.rows
+        metaRes.rows,
+        notesRes.rows
       );
+      preserveLocalFieldsBeforeSqlMigration(hydrated, false);
       cachedStore = hydrated;
       ensureDataDirs();
       fs.writeFileSync(STORE_PATH, JSON.stringify(hydrated, null, 2), 'utf8');
@@ -2298,13 +2512,14 @@ async function initSupabaseStore(): Promise<void> {
     }
     const cfg = { url: restUrl, serviceKey };
     try {
-      const [settingsResp, docsResp, usersResp, chatsResp, sessionsResp, metaResp] = await Promise.all([
+      const [settingsResp, docsResp, usersResp, chatsResp, sessionsResp, metaResp, notesResp] = await Promise.all([
         supabaseRestFetch(cfg, 'app_settings?id=eq.global'),
         supabaseRestFetch(cfg, 'study_documents?order=sort_order.asc'),
         supabaseRestFetch(cfg, 'users'),
         supabaseRestFetch(cfg, 'chat_threads'),
         supabaseRestFetch(cfg, 'sessions'),
         supabaseRestFetch(cfg, 'app_meta?id=eq.store_meta'),
+        supabaseRestFetch(cfg, 'user_notes?order=pinned.desc,updated_at.desc'),
       ]);
 
       if (settingsResp.status === 404 || usersResp.status === 404) {
@@ -2322,7 +2537,8 @@ async function initSupabaseStore(): Promise<void> {
         return;
       }
 
-      const [settingsRows, docsRows, usersRows, chatsRows, sessionsRows, metaRows] =
+      supabaseHasNotesTable = Boolean(notesResp.ok);
+      const [settingsRows, docsRows, usersRows, chatsRows, sessionsRows, metaRows, notesRows] =
         await Promise.all([
           settingsResp.json() as Promise<Array<Record<string, unknown>>>,
           docsResp.ok ? (docsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
@@ -2330,6 +2546,7 @@ async function initSupabaseStore(): Promise<void> {
           chatsResp.ok ? (chatsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
           sessionsResp.ok ? (sessionsResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
           metaResp.ok ? (metaResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
+          notesResp.ok ? (notesResp.json() as Promise<Array<Record<string, unknown>>>) : Promise.resolve([]),
         ]);
 
       supabaseRestConfig = cfg;
@@ -2362,8 +2579,10 @@ async function initSupabaseStore(): Promise<void> {
         usersRows,
         chatsRows,
         sessionsRows,
-        metaRows
+        metaRows,
+        notesRows
       );
+      preserveLocalFieldsBeforeSqlMigration(hydrated, !supabaseHasNotesTable);
       syncedSupabaseDocSignatures.clear();
       const fetchedDocIds = new Set(docsRows.map((row) => String(row.id)));
       for (const doc of hydrated.documents) {
@@ -2582,6 +2801,8 @@ function loadStore(): StoreData {
       chats: Array.isArray(parsed.chats) ? parsed.chats : [],
       progress: parsed.progress ?? { completedDocIds: [], quizScores: {} },
       users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : starter.users,
+      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+      deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : [],
       sessions: parsed.sessions ?? {},
       bibleSeeded: parsed.bibleSeeded,
     };
@@ -2589,6 +2810,12 @@ function loadStore(): StoreData {
     // Ensure at least one admin exists if migrating from old store
     if (!store.users.some((u) => u.role === 'admin')) {
       store.users.unshift(starter.users[0]);
+    }
+    const adminWithMissingEmail =
+      store.users.find((u) => u.id === 'user-admin-default') ||
+      store.users.find((u) => u.role === 'admin');
+    if (adminWithMissingEmail && !adminWithMissingEmail.email) {
+      adminWithMissingEmail.email = ADMIN_PRIMARY_EMAIL;
     }
     // Ensure chats have userId
     for (const c of store.chats) {
@@ -2654,10 +2881,13 @@ const PDF_DATA_URI_PREFIX = 'data:application/pdf;base64,';
 const MAX_INLINE_PDF_BYTES = 15 * 1024 * 1024;
 
 function readStoredPdfBuffer(storedPath?: string): Buffer | null {
-  if (!storedPath) return null;
-  if (storedPath.startsWith(PDF_DATA_URI_PREFIX)) {
+  if (!storedPath || storedPath === 'database') return null;
+  if (/^data:[^;]+;base64,/i.test(storedPath)) {
+    const commaIdx = storedPath.indexOf(',');
+    if (commaIdx === -1) return null;
     try {
-      return Buffer.from(storedPath.slice(PDF_DATA_URI_PREFIX.length), 'base64');
+      const buf = Buffer.from(storedPath.slice(commaIdx + 1), 'base64');
+      return buf.length > 0 ? buf : null;
     } catch {
       return null;
     }
@@ -2665,6 +2895,14 @@ function readStoredPdfBuffer(storedPath?: string): Buffer | null {
   if (fs.existsSync(storedPath)) {
     try {
       return fs.readFileSync(storedPath);
+    } catch {
+      return null;
+    }
+  }
+  const fallbackUploadPath = path.join(UPLOADS_DIR, path.basename(storedPath));
+  if (fs.existsSync(fallbackUploadPath)) {
+    try {
+      return fs.readFileSync(fallbackUploadPath);
     } catch {
       return null;
     }
@@ -2797,6 +3035,9 @@ function getAuthenticatedUser(req: Request, store: StoreData): UserAccount | nul
   }
   const signed = verifyStatelessAuthToken(token);
   if (!signed) return null;
+  if (store.deletedUserIds?.includes(signed.uid)) {
+    return null;
+  }
   let user = store.users.find((u) => u.id === signed.uid) || null;
   if (!user) {
     user = {
@@ -2817,49 +3058,57 @@ function sanitizeUser(u: UserAccount) {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || '',
     fullName: u.fullName,
     role: u.role,
     createdAt: u.createdAt,
   };
 }
 
-function buildSystemPrompt(settings: AdminSettings, docs: StudyDocument[]): string {
+function buildSystemPrompt(settings: AdminSettings, _docs: StudyDocument[]): string {
   const langGuide =
     settings.languageMode === 'om'
-      ? 'Respond primarily in clear, natural Afaan Oromo. Whenever the user asks in English OR asks for both languages ("afaan lamaaniin", "Oromo fi English", "bilingual"), provide the answer and Bible verses clearly in BOTH Afaan Oromo and English!'
+      ? 'Respond primarily in clear, natural, warm Afaan Oromo. Whenever the user asks in English OR requests both languages ("afaan lamaaniin", "Oromo fi English", "bilingual"), provide the teaching and Scripture clearly in BOTH Afaan Oromo and English.'
       : settings.languageMode === 'en'
         ? 'Respond primarily in clear English, and whenever the user asks in Afaan Oromo or requests both languages ("afaan lamaaniin", "bilingual"), provide BOTH Afaan Oromo and English clearly.'
-        : 'Respond bilingually (Afaan Oromo and English) or match the student language seamlessly.';
+        : 'Respond bilingually (Afaan Oromo and English) or seamlessly match the student’s preferred language.';
 
   const groundingGuide =
     settings.groundingMode === 'strict_files'
-      ? `STRICT KNOWLEDGE ACCURACY & NATURAL CONVERSATION (MANDATORY):
-- Base ALL factual answers and teachings strictly and accurately on the study materials and bilingual Afaan Oromo & English Bible passages provided below. Do NOT invent outside facts or teachings not present in the materials.
-- BILINGUAL BIBLE SHARING (AFAAN OROMO & ENGLISH): Whenever a user asks for a Bible verse, chapter, story, or teaching — or asks for the Bible in both languages ("afaan lamaaniin") — quote the exact verse(s) clearly in BOTH **Afaan Oromo** and **English** from the bilingual Bible passages provided, and converse warmly like a helpful human teacher.
-- Have a warm, natural, human-like conversation with the user ("nama waliin haasaa taasisi"). If the user greets you or makes conversational remarks, respond naturally and warmly, then answer what they asked clearly.
-- NEVER mention, repeat, or cite file names, document titles, or say "According to the file..." / "Maddi: ..." / "Faayila keessatti...". Speak directly as a knowledgeable human teacher sharing accurate truth.
-- Answer ONLY what the user asked clearly and accurately without dumping unrelated chapters.
-- If the user asks a factual question whose answer is genuinely NOT in the provided materials or Bible passages, respond warmly and politely with this exact message (or its natural equivalent in the user's language if asked in English): "Odeeffannoon hin jire, ammaaf isiniif deebisuu hin dandeenye; maaloo nagaan Waaqayyoo siif haa baay'atu! Eebbifami!"`
-      : `CURRICULUM-FIRST CONVERSATION:
-- Ground your answers accurately in the study materials and bilingual Afaan Oromo & English Bible passages provided below, quoting verses in BOTH Afaan Oromo and English whenever helpful or requested.
-- Have a warm, natural conversation with the user. NEVER repeat or cite file names ("Maddi: ...", ".md", ".pdf").`;
+      ? `FAITHFUL SCRIPTURE & WISDOM COUNSEL (MANDATORY):
+- Ground EVERY teaching, doctrine, and life counsel accurately in the 66-book Bilingual Holy Bible (Kitaaba Qulqulluu 1999 & World English Bible) and the study materials attached in this session.
+- WISE SPIRITUAL & LIFE COUNSEL ("Gorsa Sirrii"): When a user shares struggles or asks for advice (anxiety, fear, sadness, grief, forgiveness, marriage/family, parenting, decisions, prayer, temptation, work, anger, sickness, or faith doubts), respond like a compassionate, wise Christian pastor & Bible teacher:
+  1. Acknowledge their feelings warmly and respectfully in their language.
+  2. Give clear, practical, biblically faithful counsel steps (**Gorsa Qabatamaa**).
+  3. Anchor the counsel in 2–4 exact Bible verses from the passages provided (and faithful Christian Scripture), citing book, chapter, and verse cleanly so links become clickable (e.g., **Filiphisiyus 4:6-7**, **Fakkeenya 3:5-6**, **Isaayaas 41:10**, **Yohaannis 3:16**, **Roomaa 8:28**), quoting BOTH **Afaan Oromo** and **English** when helpful.
+  4. End with a brief encouraging blessing or prayerful thought.
+- Do NOT fabricate verse wording when quoting verbatim — quote faithfully from the bilingual passages provided and accurate biblical text.
+- NEVER mention, repeat, or cite internal file names, extensions (.md, .pdf, .txt), or say "According to the file..." / "Maddi: ..." / "Faayila keessatti...". Speak directly as a wise human Bible teacher and counselor.
+- Reserve "Odeeffannoon hin jire..." ONLY for completely off-topic non-biblical trivia unrelated to Christianity, the Bible, life counsel, or the study curriculum.`
+      : `CURRICULUM & PASTORAL BIBLE COUNSEL:
+- Teach faithfully from the 66-book Bilingual Holy Bible (Afaan Oromo & English) and the attached study materials, offering both accurate Scriptural exegesis and compassionate, practical Christian counsel ("gorsa sirrii").
+- Cite exact book, chapter, and verse references cleanly (e.g., **Yohaannis 14:6**, **Roomaa 8:28**) and quote verses in Afaan Oromo and English whenever helpful or requested.
+- Speak naturally and compassionately, and NEVER repeat internal file names or ".md"/".pdf" extensions.`;
 
-  return `You are "${settings.tutorName}", a warm, natural, conversational AI Bible Study Companion ("Barsiisaa fi Hiriyyaa Barnoota Macaafa Qulqulluu").
+  return `You are "${settings.tutorName}", a deeply knowledgeable, wise, and compassionate Bible Teacher and Spiritual Counselor ("Barsiisaa Macaafa Qulqulluu fi Gorsaa Afuuraa Dhugaa").
 ${langGuide}
 ${groundingGuide}
 
-Additional Guidelines:
+Additional Ministry Guidelines:
 ${settings.systemInstructions}
 
-Style rules:
-- Speak naturally as if having a friendly, respectful one-on-one conversation with the user.
-- Give accurate, clear answers directly addressing what the user asked using clean Markdown when helpful.
-- NEVER output file names, extensions (.md, .pdf, .txt), or "Maddi:" labels in your replies.`;
+Formatting & Tone Rules:
+- Be warm, pastoral, clear, and truthful — never robotic, cold, or dismissive.
+- Use clean Markdown headings, numbered practical counsel steps, and blockquotes or bulleted Scripture quotes when teaching or counseling.
+- Always format Scripture citations cleanly (Book Chapter:Verse, e.g., Yohaannis 3:16, Faarfannaa 23:1-4, Matthew 11:28) so the student can click to open them directly in the Bible Reader.
+- NEVER invent medical diagnoses; for urgent physical or mental health crises, warmly encourage seeking trusted medical care and local pastoral support alongside prayer.
+- NEVER output file names, extensions (.md, .pdf, .txt), or "Maddi:" labels.`;
 }
 
 function buildDocumentParts(
   docs: StudyDocument[],
-  settings?: AdminSettings
+  settings?: AdminSettings,
+  query?: string
 ): Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> {
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
@@ -2876,7 +3125,25 @@ function buildDocumentParts(
     });
   }
 
-  for (const doc of docs) {
+  const queryKeywords = query
+    ? normalizeSearchStr(query)
+        .split(/\s+/)
+        .filter((w) => w.length >= 3)
+    : [];
+
+  const rankedDocs = [...docs].sort((a, b) => {
+    if (queryKeywords.length === 0) return a.order - b.order;
+    const scoreDoc = (d: StudyDocument) => {
+      const hay = `${d.title} ${d.category} ${d.summary} ${d.textContent.slice(0, 6000)}`.toLowerCase();
+      return queryKeywords.reduce((acc, kw) => acc + (hay.includes(kw) ? 1 : 0), 0);
+    };
+    return scoreDoc(b) - scoreDoc(a);
+  });
+
+  const selectedDocs = rankedDocs.length > 6 ? rankedDocs.slice(0, 6) : rankedDocs;
+  const maxCharsPerDoc = selectedDocs.length <= 2 ? 32000 : 14000;
+
+  for (const doc of selectedDocs) {
     if (doc.mimeType === 'application/pdf') {
       const pdfBytes = readStoredPdfBuffer(doc.storedFilePath);
       if (pdfBytes) {
@@ -2891,9 +3158,9 @@ function buildDocumentParts(
         });
       }
     } else if (doc.textContent) {
-      const truncated = doc.textContent.slice(0, 40000);
+      const truncated = doc.textContent.slice(0, maxCharsPerDoc);
       parts.push({
-        text: `--- ADMIN STUDY DOCUMENT [${doc.order}]: "${doc.title}" (${doc.fileName}, Category: ${doc.category}) ---\n${truncated}\n--- END OF DOCUMENT ---`,
+        text: `--- ADMIN STUDY DOCUMENT [${doc.order}]: "${doc.title}" (Category: ${doc.category}) ---\n${truncated}\n--- END OF DOCUMENT ---`,
       });
     }
   }
@@ -2943,7 +3210,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     res.json({ user: sanitizeUser(user) });
   });
 
-  // Auth: login (User or Admin)
+  // Auth: login (User or Admin, via Email OR Username + Password)
   app.post('/api/auth/login', (req: Request, res: Response) => {
     const store = loadStore();
     const { username, password, expectedRole } = req.body as {
@@ -2953,15 +3220,39 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     };
 
     if (!username?.trim() || !password) {
-      res.status(400).json({ error: 'Maqaa fayyadamaa fi Password galchi.' });
+      res.status(400).json({ error: 'Email ykn Maqaa fayyadamaa fi Password galchi.' });
       return;
     }
 
-    const targetName = normalizeUsername(username);
-    const user = store.users.find((u) => normalizeUsername(u.username) === targetName);
+    const targetInput = normalizeUsername(username);
+    const user = store.users.find(
+      (u) =>
+        normalizeUsername(u.username) === targetInput ||
+        (u.email && normalizeEmail(u.email) === targetInput)
+    );
 
-    if (!user || !verifyPassword(password, user.passwordHash)) {
-      res.status(401).json({ error: 'Maqaan fayyadamaa ykn Password sirrii miti.' });
+    if (!user) {
+      if (expectedRole !== 'admin' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetInput)) {
+        res.status(404).json({
+          error: 'Email kun duraan hin galmoofne. Maqaa Guutuu kee galchuun Kutaa Barataa seeni.',
+          needsRegistration: true,
+        });
+        return;
+      }
+      res.status(401).json({ error: 'Email/Maqaan fayyadamaa ykn Password sirrii miti.' });
+      return;
+    }
+
+    if (!user.passwordHash) {
+      res.status(401).json({
+        error:
+          'Akkaawuntiin kun Google dhaan baname; password hin qabu. "Password dagadheera?" tuqiitii email keetiin password haaraa kenni.',
+      });
+      return;
+    }
+
+    if (!verifyPassword(password, user.passwordHash)) {
+      res.status(401).json({ error: 'Email/Maqaan fayyadamaa ykn Password sirrii miti.' });
       return;
     }
 
@@ -3052,12 +3343,16 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       }
 
       const store = loadStore();
-      const normalizedEmail = fbAccount.email.toLowerCase();
-      const isBootstrappedAdmin = normalizedEmail === 'danielbiranu.23@gmail.com';
+      const normalizedEmail = normalizeEmail(fbAccount.email);
+      const isBootstrappedAdmin = normalizedEmail === ADMIN_PRIMARY_EMAIL;
       const baseUsername = normalizeUsername(fbAccount.email.split('@')[0] || fbAccount.localId);
 
       let user = store.users.find(
-        (u) => u.id === fbAccount.localId || normalizeUsername(u.username) === normalizedEmail
+        (u) =>
+          u.id === fbAccount.localId ||
+          normalizeEmail(u.email) === normalizedEmail ||
+          normalizeUsername(u.username) === normalizedEmail ||
+          (isBootstrappedAdmin && u.role === 'admin')
       );
 
       if (!user) {
@@ -3068,6 +3363,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         user = {
           id: fbAccount.localId,
           username: uniqueUsername,
+          email: normalizedEmail,
           fullName: (fbAccount.displayName || baseUsername || 'Fayyadamaa Google').trim(),
           role: isBootstrappedAdmin ? 'admin' : 'user',
           passwordHash: '',
@@ -3076,7 +3372,8 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         };
         store.users.push(user);
       } else {
-        if (fbAccount.displayName?.trim()) {
+        user.email = normalizedEmail;
+        if (fbAccount.displayName?.trim() && (!user.fullName || user.fullName === 'Admin Giddugalaa')) {
           user.fullName = fbAccount.displayName.trim();
         }
         if (isBootstrappedAdmin && user.role !== 'admin') {
@@ -3084,12 +3381,17 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         }
       }
 
-      if (expectedRole === 'admin' && user.role !== 'admin') {
-        res.status(403).json({
-          error:
-            'Akkaawuntiin Google kun aangoo Admin hin qabu. Maaloo tab Barataa irratti seeni.',
-        });
-        return;
+      if (store.deletedUserIds?.includes(user.id)) {
+        store.deletedUserIds = store.deletedUserIds.filter((id) => id !== user!.id);
+      }
+
+      let effectiveRole: 'admin' | 'user' = user.role;
+      if (expectedRole === 'admin') {
+        const userEmail = normalizeEmail(user.email);
+        if (userEmail !== ADMIN_PRIMARY_EMAIL) {
+          effectiveRole = 'user';
+          if (user.role === 'admin') user.role = 'user';
+        }
       }
 
       const token = issueAuthToken(user);
@@ -3100,28 +3402,35 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       saveStore(store);
       await flushDbSync(3000);
 
-      res.json({ token, user: sanitizeUser(user) });
+      res.json({ token, user: sanitizeUser(user), effectiveTab: effectiveRole });
     } catch {
       res.status(502).json({ error: 'Firebase waliin walqunnamuun hin danda’amne.' });
     }
   });
 
-  // Auth: register new student user
+  // Auth: register new student user (with Email + Password, optional Username)
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     const store = loadStore();
-    const { fullName, username, password } = req.body as {
+    const { fullName, email, username, password } = req.body as {
       fullName?: string;
+      email?: string;
       username?: string;
       password?: string;
     };
 
-    if (!fullName?.trim() || !username?.trim() || !password) {
-      res.status(400).json({ error: 'Maqaa guutuu, Maqaa fayyadamaa, fi Password guutamuu qabu.' });
+    const cleanFullName = (fullName || '').trim();
+    const cleanEmail = normalizeEmail(email);
+    let cleanUsername = (username || '').trim();
+
+    if (!cleanFullName || !password || (!cleanEmail && !cleanUsername)) {
+      res.status(400).json({
+        error: 'Maqaa guutuu, Email (ykn maqaa fayyadamaa), fi Password guutamuu qabu.',
+      });
       return;
     }
 
-    if (username.trim().length < 3) {
-      res.status(400).json({ error: 'Maqaan fayyadamaa yoo xiqqaate qubee 3 qabaachuu qaba.' });
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      res.status(400).json({ error: 'Maaloo Email sirrii ta’e galchi (fkn: maqaa@gmail.com).' });
       return;
     }
 
@@ -3130,7 +3439,30 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       return;
     }
 
-    const normalized = normalizeUsername(username);
+    if (cleanEmail && store.users.some((u) => normalizeEmail(u.email) === cleanEmail)) {
+      res.status(409).json({
+        error: 'Email kun duraan galmaa’eera. Maaloo seenumsa (Login) fayyadami ykn password reset godhi.',
+      });
+      return;
+    }
+
+    if (!cleanUsername && cleanEmail) {
+      const emailPrefix = cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '') || 'barataa';
+      let candidate = emailPrefix.length >= 3 ? emailPrefix : `${emailPrefix}_user`;
+      let suffix = 1;
+      while (store.users.some((u) => normalizeUsername(u.username) === normalizeUsername(candidate))) {
+        suffix += 1;
+        candidate = `${emailPrefix}${suffix}`;
+      }
+      cleanUsername = candidate;
+    }
+
+    if (cleanUsername.length < 3) {
+      res.status(400).json({ error: 'Maqaan fayyadamaa yoo xiqqaate qubee 3 qabaachuu qaba.' });
+      return;
+    }
+
+    const normalized = normalizeUsername(cleanUsername);
     if (store.users.some((u) => normalizeUsername(u.username) === normalized)) {
       res.status(409).json({
         error: 'Maqaan fayyadamaa kun duraan galmaa’eera. Maaloo maqaa biraa filadhu.',
@@ -3140,8 +3472,9 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
 
     const newUser: UserAccount = {
       id: `user-${crypto.randomUUID().slice(0, 8)}`,
-      username: username.trim(),
-      fullName: fullName.trim(),
+      username: cleanUsername,
+      ...(cleanEmail ? { email: cleanEmail } : {}),
+      fullName: cleanFullName,
       role: 'user',
       passwordHash: hashPassword(password),
       progress: { completedDocIds: [], quizScores: {} },
@@ -3160,8 +3493,8 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     res.status(201).json({ token, user: sanitizeUser(newUser) });
   });
 
-  // Auth: reset forgotten password using previously registered username
-  app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+  // Auth: reset forgotten password using Email OR Username
+  app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
     const store = loadStore();
     const { username, newPassword, expectedRole } = req.body as {
       username?: string;
@@ -3170,7 +3503,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     };
 
     if (!username?.trim() || !newPassword) {
-      res.status(400).json({ error: 'Maqaa dura ittiin galmoofte fi Password haaraa galchi.' });
+      res.status(400).json({ error: 'Email ykn maqaa dura ittiin galmoofte fi Password haaraa galchi.' });
       return;
     }
 
@@ -3180,10 +3513,22 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     }
 
     const normalized = normalizeUsername(username);
-    const user = store.users.find((u) => normalizeUsername(u.username) === normalized);
+    const user = store.users.find(
+      (u) =>
+        normalizeUsername(u.username) === normalized ||
+        (u.email && normalizeEmail(u.email) === normalized)
+    );
     if (!user) {
       res.status(404).json({
-        error: `Fayyadamaan maqaa "${username.trim()}" jedhuun dura galmaa’e hin argamne.`,
+        error: `Fayyadamaan email/maqaa "${username.trim()}" jedhuun galmaa’e hin argamne.`,
+      });
+      return;
+    }
+
+    const userEmail = normalizeEmail(user.email);
+    if (userEmail === ADMIN_PRIMARY_EMAIL || user.role === 'admin') {
+      res.status(403).json({
+        error: 'Akkaawuntiin Admin (danielbiranu.23@gmail.com) kun eegumsaaf password reset godhuuf hin hayyamamu.',
       });
       return;
     }
@@ -3192,18 +3537,19 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       res.status(403).json({
         error:
           expectedRole === 'admin'
-            ? 'Maqaan kun Admin miti. Maaloo tab Barataa irratti reset godhi.'
-            : 'Maqaan kun kan Admin ti. Maaloo tab Admin irratti reset godhi.',
+            ? 'Akkaawuntiin kun Admin miti. Maaloo tab Barataa irratti reset godhi.'
+            : 'Akkaawuntiin kun kan Admin ti. Maaloo tab Admin irratti reset godhi.',
       });
       return;
     }
 
     user.passwordHash = hashPassword(newPassword);
     saveStore(store);
+    await flushDbSync(3000);
 
     res.json({
       ok: true,
-      message: `Password fayyadamaa "${user.username}" milkaa’inaan haaromfameera. Amma seenuu dandeessa.`,
+      message: `Password "${user.email || user.username}" milkaa’inaan haaromfameera. Amma seenuu dandeessa.`,
     });
   });
 
@@ -3668,8 +4014,8 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     });
   });
 
-  // Admin: update own Admin username & password
-  app.put('/api/admin/credentials', (req: Request, res: Response) => {
+  // Admin: update own Admin email, username & password
+  app.put('/api/admin/credentials', async (req: Request, res: Response) => {
     const store = loadStore();
     const user = getAuthenticatedUser(req, store);
     if (!user || user.role !== 'admin') {
@@ -3677,11 +4023,28 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       return;
     }
 
-    const { fullName, username, newPassword } = req.body as {
+    const { fullName, email, username, newPassword } = req.body as {
       fullName?: string;
+      email?: string;
       username?: string;
       newPassword?: string;
     };
+
+    if (email?.trim()) {
+      const cleanEmail = normalizeEmail(email);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        res.status(400).json({ error: 'Email sirrii ta’e galchi.' });
+        return;
+      }
+      const conflictEmail = store.users.find(
+        (u) => u.id !== user.id && normalizeEmail(u.email) === cleanEmail
+      );
+      if (conflictEmail) {
+        res.status(409).json({ error: 'Email kun fayyadamaa biraatiin qabameera.' });
+        return;
+      }
+      user.email = cleanEmail;
+    }
 
     if (username?.trim()) {
       const normalized = normalizeUsername(username);
@@ -3708,7 +4071,52 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     }
 
     saveStore(store);
+    await flushDbSync(5000);
     res.json({ user: sanitizeUser(user) });
+  });
+
+  // Admin: delete a registered student account (protects admin accounts & self)
+  app.delete('/api/admin/users/:id', async (req: Request, res: Response) => {
+    const store = loadStore();
+    const adminUser = getAuthenticatedUser(req, store);
+    if (!adminUser || adminUser.role !== 'admin') {
+      res.status(403).json({ error: 'Aangoon Admin barbaachisaa dha.' });
+      return;
+    }
+
+    const targetId = String(req.params.id || '').trim();
+    if (!targetId) {
+      res.status(400).json({ error: 'Eenyummaan barataa hin kennamne.' });
+      return;
+    }
+
+    const idx = store.users.findIndex((u) => u.id === targetId);
+    if (idx === -1) {
+      res.status(404).json({ error: 'Barataan kun hin argamne.' });
+      return;
+    }
+
+    const target = store.users[idx];
+    if (target.id === adminUser.id || target.role === 'admin') {
+      res.status(400).json({
+        error: 'Akkaawuntii Admin haquun hin danda’amu; barattoota qofa haquu dandeessa.',
+      });
+      return;
+    }
+
+    store.users.splice(idx, 1);
+    store.deletedUserIds = Array.from(new Set([...(store.deletedUserIds || []), target.id]));
+    store.chats = store.chats.filter((c) => c.userId !== target.id);
+    store.notes = (store.notes || []).filter((n) => n.userId !== target.id);
+    for (const [token, rec] of Object.entries(store.sessions)) {
+      if (rec.userId === target.id) {
+        delete store.sessions[token];
+      }
+    }
+
+    saveStore(store);
+    await flushDbSync(10000);
+    res.json({ deleted: true, deletedUserId: target.id });
   });
 
   // Admin: Free Oromo & English Bible catalog (66 books)
@@ -4245,28 +4653,102 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
     res.json({ highlights: user.highlights });
   });
 
-  // Serve PDF download/preview for a study document
-  app.get('/api/documents/:id/file', (req: Request, res: Response) => {
+  // Serve PDF/file download & inline preview for a study document (with Supabase live fallback)
+  app.get('/api/documents/:id/file', async (req: Request, res: Response) => {
     const store = loadStore();
-    const doc = store.documents.find((d) => d.id === req.params.id);
+    let doc = store.documents.find((d) => d.id === req.params.id);
+    let fileBuf = doc ? readStoredPdfBuffer(doc.storedFilePath) : null;
+
+    if (!doc || (doc.mimeType === 'application/pdf' && !fileBuf)) {
+      try {
+        let remoteRow: Record<string, unknown> | null = null;
+        if (supabasePgPool) {
+          const q = await supabasePgPool.query(
+            'SELECT * FROM study_documents WHERE id = $1 LIMIT 1',
+            [req.params.id]
+          );
+          if (q.rows.length > 0) remoteRow = q.rows[0] as Record<string, unknown>;
+        } else if (supabaseRestConfig) {
+          const resp = await supabaseRestFetch(
+            supabaseRestConfig,
+            `study_documents?id=eq.${encodeURIComponent(req.params.id)}&limit=1`
+          );
+          if (resp.ok) {
+            const rows = (await resp.json()) as Array<Record<string, unknown>>;
+            if (rows.length > 0) remoteRow = rows[0];
+          }
+        }
+
+        if (remoteRow) {
+          const remoteDoc: StudyDocument = {
+            id: String(remoteRow.id),
+            order: Number(remoteRow.sort_order ?? remoteRow.order ?? 1),
+            title: String(remoteRow.title || 'Barnoota'),
+            category: String(remoteRow.category || 'Barnoota Waliigalaa'),
+            fileName: String(remoteRow.file_name || 'document.pdf'),
+            mimeType: String(remoteRow.mime_type || 'application/pdf'),
+            sizeBytes: Number(remoteRow.size_bytes || 0),
+            sourceType:
+              remoteRow.source_type === 'upload' || remoteRow.source_type === 'lesson'
+                ? remoteRow.source_type
+                : 'starter',
+            active: Boolean(remoteRow.active ?? true),
+            summary: String(remoteRow.summary || ''),
+            textContent: String(remoteRow.text_content || ''),
+            storedFilePath:
+              typeof remoteRow.stored_file_path === 'string'
+                ? remoteRow.stored_file_path
+                : undefined,
+            createdAt: String(remoteRow.created_at || new Date().toISOString()),
+            updatedAt: String(remoteRow.updated_at || new Date().toISOString()),
+          };
+          const existingIdx = store.documents.findIndex((d) => d.id === remoteDoc.id);
+          if (existingIdx !== -1) {
+            store.documents[existingIdx] = remoteDoc;
+          } else {
+            store.documents.push(remoteDoc);
+          }
+          doc = remoteDoc;
+          fileBuf = readStoredPdfBuffer(doc.storedFilePath);
+        }
+      } catch (err) {
+        console.warn('Supabase fallback lookup for document file failed:', err);
+      }
+    }
+
     if (!doc) {
-      res.status(404).json({ error: 'Faayilli hin argamne.' });
+      res.status(404).json({ error: 'Faayilli kun hin argamne.' });
       return;
     }
-    const fileBuf = readStoredPdfBuffer(doc.storedFilePath);
+
+    const asciiSafe = (doc.fileName || 'document.pdf')
+      .replace(/[^\x20-\x7E]+/g, '_')
+      .replace(/["\\;]/g, '_');
+    const encodedName = encodeURIComponent(doc.fileName || asciiSafe);
+    const dispType = req.query.download === '1' ? 'attachment' : 'inline';
+    res.setHeader(
+      'Content-Disposition',
+      `${dispType}; filename="${asciiSafe}"; filename*=UTF-8''${encodedName}`
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+
     if (fileBuf) {
       res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+      res.setHeader('Content-Length', String(fileBuf.length));
       res.send(fileBuf);
       return;
     }
-    if (doc.mimeType !== 'application/pdf' && doc.textContent) {
-      res.setHeader('Content-Type', `${doc.mimeType || 'text/plain'}; charset=utf-8`);
-      res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
-      res.send(Buffer.from(doc.textContent, 'utf8'));
+
+    if (doc.textContent) {
+      const textBuf = Buffer.from(doc.textContent, 'utf8');
+      res.setHeader('Content-Type', `${doc.mimeType === 'application/pdf' ? 'text/plain' : doc.mimeType || 'text/plain'}; charset=utf-8`);
+      res.setHeader('Content-Length', String(textBuf.length));
+      res.send(textBuf);
       return;
     }
-    res.status(404).json({ error: 'Faayilli hin argamne.' });
+
+    res.status(404).json({ error: 'Qabiyyeen faayila kanaa hin argamne.' });
   });
 
   // Chat threads CRUD (scoped to authenticated user)
@@ -4450,6 +4932,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
           },
         ],
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.ARRAY,
@@ -4543,7 +5026,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         : activeDocs;
 
     const systemInstruction = buildSystemPrompt(store.settings, targetDocs);
-    const docParts = buildDocumentParts(targetDocs, store.settings);
+    const docParts = buildDocumentParts(targetDocs, store.settings, message.trim());
 
     const biblePassageContext = searchBibleForQuery(message.trim());
     if (biblePassageContext) {
@@ -4557,7 +5040,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         parts: [
           ...docParts,
           {
-            text: `The student's name is "${user.fullName}". Use the Admin study materials attached above as the foundation for answering the student in this study session.`,
+            text: `The student's name is "${user.fullName}". Use the Bilingual 66-Book Bible passages and study materials attached above as your foundation for teaching and giving wise, faithful biblical counsel.`,
           },
         ],
       },
@@ -4565,7 +5048,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         role: 'model',
         parts: [
           {
-            text: 'Tole, faayiloota barnootaa Adminiin kenne sirriitti hubadheera. Gaaffii barataatiif qophaa’eera.',
+            text: 'Tole, sagalee Macaafa Qulqulluu fi barnoota qophaa’an sirriitti hubadheera. Gaaffii barnootaa fi gorsa hafuuraa dhugaa kennuuf qophaa’eera.',
           },
         ],
       },
@@ -4613,19 +5096,32 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
 
     let fullReply = '';
     try {
-      const stream = await ai.models.generateContentStream({
-        model: 'gemini-4-hydrogen',
-        contents,
-        config: {
-          systemInstruction,
-        },
-      });
+      const runGeminiStream = async () => {
+        const stream = await ai.models.generateContentStream({
+          model: 'gemini-4-hydrogen',
+          contents,
+          config: {
+            systemInstruction,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+          },
+        });
+        for await (const chunk of stream) {
+          const text = chunk.text ?? '';
+          if (text) {
+            fullReply += text;
+            res.write(`data: ${JSON.stringify({ type: 'chunk', text })}\n\n`);
+          }
+        }
+      };
 
-      for await (const chunk of stream) {
-        const text = chunk.text ?? '';
-        if (text) {
-          fullReply += text;
-          res.write(`data: ${JSON.stringify({ type: 'chunk', text })}\n\n`);
+      try {
+        await runGeminiStream();
+      } catch (firstErr) {
+        if (!fullReply) {
+          console.warn('Retrying Gemini chat stream once after transient error:', firstErr);
+          await runGeminiStream();
+        } else {
+          throw firstErr;
         }
       }
 
@@ -4672,6 +5168,162 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
       res.write(`data: ${JSON.stringify({ type: 'done', message: fallbackMsg, thread })}\n\n`);
       res.end();
     }
+  });
+
+  // Role & owner-isolated Personal Notes (Admin notes kept separate from Student notes)
+  app.get('/api/notes', (req: Request, res: Response) => {
+    const store = loadStore();
+    const user = getAuthenticatedUser(req, store);
+    if (!user) {
+      res.status(401).json({ error: 'Dura seenuu qabda.' });
+      return;
+    }
+
+    const notes = (store.notes || [])
+      .filter((n) => n.userId === user.id && n.ownerRole === user.role)
+      .slice()
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+
+    res.json({ notes, ownerRole: user.role });
+  });
+
+  app.post('/api/notes', async (req: Request, res: Response) => {
+    const store = loadStore();
+    const user = getAuthenticatedUser(req, store);
+    if (!user) {
+      res.status(401).json({ error: 'Dura seenuu qabda.' });
+      return;
+    }
+
+    const { title, content, category, scriptureRef, pinned } = req.body as {
+      title?: string;
+      content?: string;
+      category?: string;
+      scriptureRef?: string;
+      pinned?: boolean;
+    };
+
+    const cleanTitle = (title || '').trim().slice(0, 200);
+    const cleanContent = (content || '').trim().slice(0, 20000);
+    if (!cleanTitle || !cleanContent) {
+      res.status(400).json({ error: 'Mata-duree fi qabiyyeen yaadannoo guutamuu qabu.' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const newNote: PersonalNote = {
+      id: `note-${crypto.randomUUID().slice(0, 10)}`,
+      userId: user.id,
+      ownerRole: user.role,
+      title: cleanTitle,
+      content: cleanContent,
+      category: (category || '').trim().slice(0, 80) || (user.role === 'admin' ? 'Qophii Barsiisaa' : 'Qo’annoo Macaafaa'),
+      ...(scriptureRef?.trim() ? { scriptureRef: scriptureRef.trim().slice(0, 120) } : {}),
+      pinned: Boolean(pinned),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (!Array.isArray(store.notes)) store.notes = [];
+    store.notes.unshift(newNote);
+    saveStore(store);
+    await flushDbSync(3000);
+
+    res.status(201).json({ note: newNote });
+  });
+
+  app.put('/api/notes/:id', async (req: Request, res: Response) => {
+    const store = loadStore();
+    const user = getAuthenticatedUser(req, store);
+    if (!user) {
+      res.status(401).json({ error: 'Dura seenuu qabda.' });
+      return;
+    }
+
+    const noteId = String(req.params.id || '').trim();
+    const note = (store.notes || []).find(
+      (n) => n.id === noteId && n.userId === user.id && n.ownerRole === user.role
+    );
+    if (!note) {
+      res.status(404).json({ error: 'Yaadannoon kun hin argamne ykn kan kee miti.' });
+      return;
+    }
+
+    const { title, content, category, scriptureRef, pinned } = req.body as {
+      title?: string;
+      content?: string;
+      category?: string;
+      scriptureRef?: string;
+      pinned?: boolean;
+    };
+
+    if (typeof title === 'string') {
+      const cleanTitle = title.trim().slice(0, 200);
+      if (!cleanTitle) {
+        res.status(400).json({ error: 'Mata-dureen yaadannoo duwwaa ta’uu hin danda’u.' });
+        return;
+      }
+      note.title = cleanTitle;
+    }
+
+    if (typeof content === 'string') {
+      const cleanContent = content.trim().slice(0, 20000);
+      if (!cleanContent) {
+        res.status(400).json({ error: 'Qabiyyeen yaadannoo duwwaa ta’uu hin danda’u.' });
+        return;
+      }
+      note.content = cleanContent;
+    }
+
+    if (typeof category === 'string' && category.trim()) {
+      note.category = category.trim().slice(0, 80);
+    }
+
+    if (typeof scriptureRef === 'string') {
+      const cleanRef = scriptureRef.trim().slice(0, 120);
+      if (cleanRef) {
+        note.scriptureRef = cleanRef;
+      } else {
+        delete note.scriptureRef;
+      }
+    }
+
+    if (typeof pinned === 'boolean') {
+      note.pinned = pinned;
+    }
+
+    note.updatedAt = new Date().toISOString();
+    saveStore(store);
+    await flushDbSync(3000);
+
+    res.json({ note });
+  });
+
+  app.delete('/api/notes/:id', async (req: Request, res: Response) => {
+    const store = loadStore();
+    const user = getAuthenticatedUser(req, store);
+    if (!user) {
+      res.status(401).json({ error: 'Dura seenuu qabda.' });
+      return;
+    }
+
+    const noteId = String(req.params.id || '').trim();
+    const idx = (store.notes || []).findIndex(
+      (n) => n.id === noteId && n.userId === user.id && n.ownerRole === user.role
+    );
+    if (idx === -1) {
+      res.status(404).json({ error: 'Yaadannoon kun hin argamne ykn kan kee miti.' });
+      return;
+    }
+
+    store.notes!.splice(idx, 1);
+    saveStore(store);
+    await flushDbSync(3000);
+
+    res.json({ deleted: true, id: noteId });
   });
 
   // Ensure /api/* always returns JSON (never HTML fallback)

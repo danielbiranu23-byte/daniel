@@ -133,7 +133,7 @@ export function FloatingChatbotWidget({
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Chatbot bani"
-          className="inline-flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-white bg-[#142d4c] rounded-xl shadow-lg hover:bg-[#0e2139] transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#142d4c]"
+          className="btn-3d-primary inline-flex items-center gap-2.5 px-4 py-3 text-sm font-semibold rounded-2xl shadow-xl whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#142d4c]"
         >
           <MessageSquare className="w-4 h-4 text-[#f5d08a]" aria-hidden="true" />
           <span>Chatbot Gaafadhu</span>
@@ -144,16 +144,16 @@ export function FloatingChatbotWidget({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-[60] w-[calc(100vw-2rem)] sm:w-[440px] h-[580px] max-h-[82vh] bg-white border border-[#e4e0d8] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-enter"
+      className="sanctuary-card fixed bottom-4 right-4 z-[60] w-[calc(100vw-2rem)] sm:w-[440px] h-[580px] max-h-[82vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-enter"
       role="dialog"
       aria-label={settings.tutorName}
     >
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[#e4e0d8] bg-[#142d4c] text-white flex items-center justify-between gap-3">
+      <div className="px-4 py-3 border-b border-[#0e2139] bg-gradient-to-b from-[#1a3c66] to-[#112742] text-white flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <BookOpen className="w-4 h-4 text-[#f5d08a] shrink-0" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">{settings.tutorName}</p>
+            <p className="text-sm font-bold text-3d-light truncate">{settings.tutorName}</p>
             <p className="text-[11px] text-zinc-200/90 truncate">
               Faayiloota kennaman ({documents.length}) irratti xiyyeeffata
             </p>
@@ -198,8 +198,8 @@ export function FloatingChatbotWidget({
       </div>
 
       {/* File Focus Selector */}
-      <div className="px-3.5 py-2.5 border-b border-[#e4e0d8] bg-[#f7f6f2] space-y-2">
-        <div className="grid grid-cols-3 gap-1 p-0.5 bg-[#e9e5dc] rounded-lg">
+      <div className="px-3.5 py-2.5 border-b border-[#dfd9cd] bg-[#f7f5ef] space-y-2">
+        <div className="tray-3d grid grid-cols-3 gap-1 p-1 rounded-xl">
           {(
             [
               { id: 'all', label: 'Hundaa' },
@@ -211,9 +211,9 @@ export function FloatingChatbotWidget({
               key={t.id}
               type="button"
               onClick={() => setScopeTestament(t.id)}
-              className={`py-1 px-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+              className={`py-1 px-1 text-[11px] font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                 scopeTestament === t.id
-                  ? 'bg-white text-[#142d4c] shadow-xs'
+                  ? 'tab-3d-active text-[#142d4c] font-semibold'
                   : 'text-[#52504b] hover:text-[#171614]'
               }`}
             >
@@ -233,7 +233,7 @@ export function FloatingChatbotWidget({
               if (activeThreadId) onSelectThread(null);
             }}
             disabled={streaming}
-            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-white border border-[#e4e0d8] rounded-lg text-[#171614] focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+            className="input-3d flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg text-[#171614] focus:outline-none"
           >
             <option value="all">Barnoota &amp; Macaafa Hunda ({filteredScopeDocs.length})</option>
             {filteredScopeDocs.map((doc) => (
@@ -258,7 +258,7 @@ export function FloatingChatbotWidget({
                   key={idx}
                   type="button"
                   onClick={() => sendMessage(q)}
-                  className="w-full text-left px-3 py-2.5 rounded-xl border border-[#e4e0d8] bg-[#f7f6f2] hover:border-[#142d4c]/40 hover:bg-white text-xs text-[#171614] transition-colors cursor-pointer"
+                  className="btn-3d-secondary w-full text-left px-3 py-2.5 rounded-xl text-xs text-[#171614] cursor-pointer"
                 >
                   {q}
                 </button>
@@ -273,12 +273,12 @@ export function FloatingChatbotWidget({
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {msg.role === 'user' ? (
-              <div className="max-w-[85%] bg-[#142d4c] text-white px-3.5 py-2.5 rounded-xl rounded-br-sm text-xs leading-relaxed whitespace-pre-wrap">
+              <div className="bubble-3d-user max-w-[85%] text-white px-3.5 py-2.5 rounded-xl rounded-br-sm text-xs leading-relaxed whitespace-pre-wrap">
                 {msg.content}
               </div>
             ) : (
               <div className="w-full space-y-1.5">
-                <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-xl px-3.5 py-3 prose prose-xs prose-zinc max-w-none prose-headings:font-editorial prose-p:text-xs prose-p:leading-relaxed prose-li:text-xs">
+                <div className="bubble-3d-assistant rounded-xl px-3.5 py-3 prose prose-xs prose-zinc max-w-none prose-headings:font-editorial prose-p:text-xs prose-p:leading-relaxed prose-li:text-xs">
                   <ChatbotMessageContent
                     content={msg.content}
                     onOpenBibleRef={(target) => {
@@ -311,7 +311,7 @@ export function FloatingChatbotWidget({
             (m) => m.content === optimisticUserMsg.content && m.id === optimisticUserMsg.id
           ) && (
             <div className="flex justify-end">
-              <div className="max-w-[85%] bg-[#142d4c] text-white px-3.5 py-2.5 rounded-xl rounded-br-sm text-xs leading-relaxed whitespace-pre-wrap">
+              <div className="bubble-3d-user max-w-[85%] text-white px-3.5 py-2.5 rounded-xl rounded-br-sm text-xs leading-relaxed whitespace-pre-wrap">
                 {optimisticUserMsg.content}
               </div>
             </div>
@@ -323,7 +323,7 @@ export function FloatingChatbotWidget({
               <Loader2 className="w-3 h-3 animate-spin text-[#142d4c]" />
               <span>Faayila irraa deebisaa jira...</span>
             </div>
-            <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-xl px-3.5 py-3 prose prose-xs prose-zinc max-w-none">
+            <div className="bubble-3d-assistant rounded-xl px-3.5 py-3 prose prose-xs prose-zinc max-w-none">
               {streamingText ? (
                 <ChatbotMessageContent
                   content={streamingText}
@@ -340,7 +340,7 @@ export function FloatingChatbotWidget({
         )}
 
         {error && (
-          <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-xl px-3.5 py-3 text-xs text-[#171614] leading-relaxed">
+          <div className="bubble-3d-assistant rounded-xl px-3.5 py-3 text-xs text-[#171614] leading-relaxed">
             {error}
           </div>
         )}
@@ -354,9 +354,9 @@ export function FloatingChatbotWidget({
           e.preventDefault();
           sendMessage(input);
         }}
-        className="p-3 border-t border-[#e4e0d8] bg-[#f7f6f2]"
+        className="p-3 border-t border-[#dfd9cd] bg-[#f7f5ef]"
       >
-        <div className="flex items-end gap-2 bg-white border border-[#e4e0d8] rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-[#142d4c]">
+        <div className="input-3d flex items-end gap-2 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-[#142d4c]">
           <textarea
             rows={1}
             value={input}
@@ -375,7 +375,7 @@ export function FloatingChatbotWidget({
             type="submit"
             disabled={streaming || !input.trim()}
             aria-label="Ergi"
-            className="p-2 rounded-lg bg-[#142d4c] text-white hover:bg-[#0e2139] disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+            className="btn-3d-primary p-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer"
           >
             {streaming ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

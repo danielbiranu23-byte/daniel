@@ -547,11 +547,11 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
         )}
         <div className="relative z-10 px-6 sm:px-8 py-6 sm:py-7 bg-gradient-to-r from-white via-white lg:via-white/95 lg:to-white/60 flex flex-wrap items-end justify-between gap-5">
           <div className="space-y-1.5 max-w-2xl">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16]">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-semibold text-[#9a6b16] text-3d-gold">
               <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Kitaaba Qulqulluu (1999) · World English Bible</span>
             </div>
-            <h1 className="font-editorial text-2xl sm:text-3xl font-semibold text-[#171614] tracking-tight">
+            <h1 className="font-editorial text-2xl sm:text-3xl font-semibold text-[#171614] tracking-tight text-3d-display">
               Macaafa Qulqulluu — Afaan Oromo &amp; English
             </h1>
             <p className="text-sm text-[#52504b] leading-relaxed">
@@ -563,13 +563,13 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
             <button
               type="button"
               onClick={() => setShowSavedPanel((prev) => !prev)}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 ${
                 showSavedPanel
-                  ? 'bg-[#fbf6ea] border-[#e8d8b5] text-[#7c530e]'
-                  : 'bg-white/95 border-[#e4e0d8] text-[#171614] hover:bg-[#f7f6f2]'
+                  ? 'btn-3d-gold'
+                  : 'btn-3d-secondary text-[#171614]'
               }`}
             >
-              <Bookmark className="w-4 h-4 text-[#9a6b16]" aria-hidden="true" />
+              <Bookmark className={`w-4 h-4 ${showSavedPanel ? 'text-[#fff3d4]' : 'text-[#9a6b16]'}`} aria-hidden="true" />
               <span>Kan Ol-Kaa’ame ({highlights.length})</span>
             </button>
 
@@ -577,7 +577,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
               type="button"
               onClick={handleDownloadBook}
               disabled={downloading}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-[#171614] bg-white/95 border border-[#e4e0d8] rounded-lg hover:bg-[#f7f6f2] transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+              className="btn-3d-secondary inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-[#171614] rounded-xl cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -590,7 +590,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
             <button
               type="button"
               onClick={onOpenChatbot}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="btn-3d-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0"
             >
               <MessageSquare className="w-4 h-4 text-[#f5d08a]" />
               <span>Chatbot Afaan Lamaan Gaafadhu</span>
@@ -618,7 +618,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
         <section className="sanctuary-card rounded-2xl p-5 sm:p-6 space-y-4 animate-enter">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e0d8] pb-3.5">
             <div>
-              <h2 className="font-editorial text-lg font-semibold text-[#171614]">
+              <h2 className="font-editorial text-lg font-semibold text-[#171614] text-3d-subtle">
                 Luqqisiiwwan Halluu &amp; Ol-Kaa’aman ({highlights.length})
               </h2>
               <p className="text-xs text-[#52504b]">
@@ -630,10 +630,10 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
               <button
                 type="button"
                 onClick={() => setSavedColorFilter('all')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-lg border cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg cursor-pointer ${
                   savedColorFilter === 'all'
-                    ? 'bg-[#142d4c] text-white border-[#142d4c]'
-                    : 'bg-white text-[#52504b] border-[#e4e0d8] hover:bg-[#f7f6f2]'
+                    ? 'btn-3d-primary'
+                    : 'btn-3d-secondary text-[#52504b]'
                 }`}
               >
                 Hundaa
@@ -643,10 +643,10 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                   key={opt.id}
                   type="button"
                   onClick={() => setSavedColorFilter(opt.id)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border cursor-pointer transition-colors ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg cursor-pointer ${
                     savedColorFilter === opt.id
-                      ? 'bg-[#142d4c] text-white border-[#142d4c]'
-                      : 'bg-white text-[#52504b] border-[#e4e0d8] hover:bg-[#f7f6f2]'
+                      ? 'btn-3d-primary'
+                      : 'btn-3d-secondary text-[#52504b]'
                   }`}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full border ${opt.swatchClass}`} />
@@ -729,7 +729,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-[#e4e0d8]">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="text-xs font-medium text-[#52504b]">Kakuu Filadhu:</span>
-            <div className="inline-flex items-center gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-xl">
+            <div className="tray-3d inline-flex items-center gap-1 p-1 rounded-xl">
               {(
                 [
                   { id: 'all', label: `Hunduma (${books.length})` },
@@ -749,7 +749,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                   onClick={() => handleTestamentChange(opt.id)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 tabular-nums ${
                     testament === opt.id
-                      ? 'bg-white text-[#142d4c] shadow-xs'
+                      ? 'tab-3d-active text-[#142d4c]'
                       : 'text-[#52504b] hover:text-[#171614]'
                   }`}
                 >
@@ -776,7 +776,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
               id="reader-book-select"
               value={bookId}
               onChange={(e) => handleBookChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c]"
+              className="input-3d w-full px-3 py-2 text-sm rounded-xl focus:outline-none"
             >
               {(testament === 'all' || testament === 'old') && (
                 <optgroup label="Kakuu Moofaa (Old Testament — 39)">
@@ -817,7 +817,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                 }}
                 disabled={chapter <= 1}
                 aria-label="Boqonnaa duraa"
-                className="p-2 text-[#52504b] bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] disabled:opacity-40 cursor-pointer shrink-0"
+                className="btn-3d-secondary p-2 text-[#52504b] rounded-xl disabled:opacity-40 cursor-pointer shrink-0"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -829,7 +829,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                   setHighlightVerse(null);
                   setChapter(Number(e.target.value));
                 }}
-                className="flex-1 px-3 py-2 text-sm font-mono tabular-nums bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d flex-1 px-3 py-2 text-sm font-mono tabular-nums rounded-xl focus:outline-none"
               >
                 {chapterOptions.map((n) => (
                   <option key={n} value={n}>
@@ -846,7 +846,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                 }}
                 disabled={chapter >= totalChapters}
                 aria-label="Boqonnaa itti aanu"
-                className="p-2 text-[#52504b] bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] disabled:opacity-40 cursor-pointer shrink-0"
+                className="btn-3d-secondary p-2 text-[#52504b] rounded-xl disabled:opacity-40 cursor-pointer shrink-0"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -856,7 +856,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
           {/* Display Mode */}
           <div className="lg:col-span-4 space-y-1.5">
             <span className="block text-xs font-medium text-[#52504b]">Afaan Dubbisaa</span>
-            <div className="grid grid-cols-3 gap-1 p-1 bg-[#f2efe9] border border-[#e4e0d8] rounded-xl">
+            <div className="tray-3d grid grid-cols-3 gap-1 p-1 rounded-xl">
               {(
                 [
                   { id: 'bilingual', label: 'Afaan Lamaan' },
@@ -870,7 +870,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                   onClick={() => setViewLang(opt.id)}
                   className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     viewLang === opt.id
-                      ? 'bg-white text-[#142d4c] shadow-xs'
+                      ? 'tab-3d-active text-[#142d4c]'
                       : 'text-[#52504b] hover:text-[#171614]'
                   }`}
                 >
@@ -890,7 +890,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Barbaadi: luqqisii ykn jecha (fkn: Yohn 14:6, Faarfannaa 23, jaalala, peace)..."
-              className="w-full pl-9 pr-8 py-2 text-sm bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#142d4c] focus:bg-white transition-colors"
+              className="input-3d w-full pl-9 pr-8 py-2 text-sm rounded-xl focus:outline-none"
             />
             {searchQuery && (
               <button
@@ -909,7 +909,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
           <button
             type="submit"
             disabled={searching}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+            className="btn-3d-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             <span>Barbaadi</span>
@@ -968,7 +968,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
       <section className="sanctuary-card rounded-2xl overflow-hidden">
         <div className="px-6 sm:px-8 py-5 border-b border-[#e4e0d8] bg-[#f7f6f2]/80 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-editorial text-xl sm:text-2xl font-semibold text-[#171614] tracking-tight">
+            <h2 className="font-editorial text-xl sm:text-2xl font-semibold text-[#171614] tracking-tight text-3d-display">
               {chapterData
                 ? `${chapterData.omName} ${chapterData.chapter} — ${chapterData.enName} ${chapterData.chapter}`
                 : 'Dubbisa Macaafa Qulqulluu'}
@@ -986,7 +986,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                 setChapter((c) => Math.max(1, c - 1));
               }}
               disabled={chapter <= 1}
-              className="px-3.5 py-1.5 text-xs font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] disabled:opacity-40 cursor-pointer whitespace-nowrap"
+              className="btn-3d-secondary px-3.5 py-1.5 text-xs font-medium text-[#171614] rounded-xl disabled:opacity-40 cursor-pointer whitespace-nowrap"
             >
               ← Boqonnaa Duraa
             </button>
@@ -997,7 +997,7 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                 setChapter((c) => Math.min(totalChapters, c + 1));
               }}
               disabled={chapter >= totalChapters}
-              className="px-3.5 py-1.5 text-xs font-medium text-[#171614] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] disabled:opacity-40 cursor-pointer whitespace-nowrap"
+              className="btn-3d-secondary px-3.5 py-1.5 text-xs font-medium text-[#171614] rounded-xl disabled:opacity-40 cursor-pointer whitespace-nowrap"
             >
               Boqonnaa Itti Aanu →
             </button>
@@ -1033,10 +1033,10 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                   : 'hover:bg-[#f7f6f2]/85';
 
               const verseActions = (
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <div
-                    className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg bg-white/90 border border-[#e4e0d8]"
-                    title="Kutaa kana halluu godhiitii ol-kaa’i"
+                    className="tray-3d inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shadow-inner"
+                    title="Kutaa kana halluu godhi ykn haqi"
                   >
                     {HIGHLIGHT_OPTIONS.map((opt) => {
                       const active = savedHighlight?.color === opt.id;
@@ -1048,21 +1048,32 @@ export function BibleReaderView({ userId, targetRef, onOpenChatbot }: BibleReade
                           title={
                             active
                               ? `${opt.label} haqi`
-                              : `${opt.label} tiin halluu godhii ol-kaa’i`
+                              : `${opt.label} tiin halluu godhi`
                           }
                           aria-label={`Highlight verse ${v.number} ${opt.label}`}
-                          className={`w-3.5 h-3.5 rounded-full border transition-transform cursor-pointer ${opt.swatchClass} ${
-                            active ? 'ring-2 ring-offset-1 ring-[#142d4c] scale-110' : 'opacity-75 hover:opacity-100'
+                          className={`w-4 h-4 rounded-full border transition-all cursor-pointer ${opt.swatchClass} ${
+                            active ? 'ring-2 ring-offset-1 ring-[#142d4c] scale-125' : 'opacity-80 hover:opacity-100 hover:scale-105'
                           }`}
                         />
                       );
                     })}
+                    {savedHighlight && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleHighlight(v, savedHighlight.color)}
+                        title="Halluu irraa haqi (Clear highlight)"
+                        aria-label={`Clear highlight for verse ${v.number}`}
+                        className="ml-1 p-1 text-red-700 hover:text-red-900 bg-red-50 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={() => handleCopyVerse(v)}
                     title="Luqqisii waraabi (Copy)"
-                    className="p-1.5 text-[#76736c] hover:text-[#142d4c] rounded-lg hover:bg-white/90 cursor-pointer shrink-0"
+                    className="btn-3d-secondary p-1.5 text-[#76736c] hover:text-[#142d4c] rounded-lg cursor-pointer shrink-0"
                   >
                     {copiedVerse === v.number ? (
                       <Check className="w-3.5 h-3.5 text-emerald-600" />

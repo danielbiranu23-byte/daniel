@@ -5,6 +5,7 @@ export type UserRole = 'admin' | 'user';
 export interface AuthUser {
   id: string;
   username: string;
+  email?: string;
   fullName: string;
   role: UserRole;
   createdAt: string;
@@ -126,3 +127,17 @@ export interface BibleReferenceTarget {
   verse?: number;
   nonce?: number;
 }
+
+export interface PersonalNote {
+  id: string;
+  userId: string;
+  ownerRole: UserRole;
+  title: string;
+  content: string;
+  category: string;
+  scriptureRef?: string;
+  pinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+

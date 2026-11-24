@@ -24,6 +24,7 @@ import type {
   BibleHighlight,
   ChatMessage,
   ChatThread,
+  PersonalNote,
   PublicAdminSettings,
   StudentProgress,
   StudyDocument,
@@ -690,5 +691,93 @@ export async function deleteChatThreadFromFirestore(
     await deleteDoc(doc(db, 'users', safeUid, 'chats', safeThreadId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, threadPath);
+  }
+}
+
+export async function fetchNotesFromFirestore(uid: string): Promise<PersonalNote[]> {
+  if (!auth.currentUser?.emailVerified) return [];
+  const safeUid = sanitizeId(uid);
+  const path = `users/${safeUid}/notes`;
+  try {
+    const q = query(collection(db, 'users', safeUid, 'notes'), where('userId', '==', safeUid));
+    const snap = await getDocs(q);
+    const items: PersonalNote[] = [];
+    snap.forEach((docSnap) => {
+      const d = docSnap.data() as Record<string, unknown>;
+      items.push({
+        id: String(d.id || docSnap.id),
+        userId: String(d.userId || safeUid),
+        ownerRole: d.ownerRole === 'admin' ? 'admin' : 'user',
+        title: String(d.title || 'Yaadannoo'),
+        content: String(d.content || ''),
+        category: String(d.category || 'Yaadannoo'),
+        scriptureRef: typeof d.scriptureRef === 'string' ? d.scriptureRef : undefined,
+        pinned: Boolean(d.pinned),
+        createdAt: String(d.createdAt || new Date().toISOString()),
+        updatedAt: String(d.updatedAt || new Date().toISOString()),
+      });
+    });
+    items.sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
+    return items;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveNoteToFirestore(uid: string, note: PersonalNote): Promise<void> {
+  if (!auth.currentUser?.emailVerified) return;
+  const safeUid = sanitizeId(uid);
+  const safeNoteId = sanitizeId(note.id);
+  const path = `users/${safeUid}/notes/${safeNoteId}`;
+  const now = new Date().toISOString();
+  const title = clampStr(note.title, 200, 'Yaadannoo');
+  const content = clampStr(note.content, 20000, '...');
+  const category = clampStr(note.category, 80, 'Yaadannoo');
+  const scriptureRef = clampStr(note.scriptureRef, 120, '');
+  const updatedAt = clampStr(note.updatedAt, 40, now);
+
+  try {
+    const noteRef = doc(db, 'users', safeUid, 'notes', safeNoteId);
+    const existingSnap = await getDoc(noteRef);
+    if (existingSnap.exists()) {
+      await updateDoc(noteRef, {
+        title,
+        content,
+        category,
+        ...(scriptureRef ? { scriptureRef } : {}),
+        pinned: Boolean(note.pinned),
+        updatedAt,
+      });
+    } else {
+      await setDoc(noteRef, {
+        id: safeNoteId,
+        userId: safeUid,
+        ownerRole: note.ownerRole === 'admin' ? 'admin' : 'user',
+        title,
+        content,
+        category,
+        ...(scriptureRef ? { scriptureRef } : {}),
+        pinned: Boolean(note.pinned),
+        createdAt: clampStr(note.createdAt, 40, now),
+        updatedAt,
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteNoteFromFirestore(uid: string, noteId: string): Promise<void> {
+  if (!auth.currentUser?.emailVerified) return;
+  const safeUid = sanitizeId(uid);
+  const safeNoteId = sanitizeId(noteId);
+  const path = `users/${safeUid}/notes/${safeNoteId}`;
+  try {
+    await deleteDoc(doc(db, 'users', safeUid, 'notes', safeNoteId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }

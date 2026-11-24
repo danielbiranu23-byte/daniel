@@ -72,18 +72,18 @@ export function QuizModal({ doc, onClose, onQuizCompleted }: QuizModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b192b]/55 backdrop-blur-xs p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b192b]/72 p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="quiz-modal-title"
     >
-      <div className="bg-white border border-[#e4e0d8] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-enter">
-        <div className="px-6 py-4 border-b border-[#e4e0d8] bg-[#f7f6f2] flex items-center justify-between gap-4">
+      <div className="sanctuary-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-enter">
+        <div className="px-6 py-4 border-b border-[#dfd9cd] bg-gradient-to-b from-[#faf8f4] to-[#f3efe6] flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[#9a6b16]">
+            <p className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[#9a6b16] text-3d-gold">
               Qormaata Hubannoo Barnootaa
             </p>
-            <h2 id="quiz-modal-title" className="font-editorial text-lg font-semibold text-[#171614] truncate mt-0.5">
+            <h2 id="quiz-modal-title" className="font-editorial text-lg font-bold text-[#171614] text-3d-display truncate mt-0.5">
               {doc.title}
             </h2>
           </div>
@@ -91,7 +91,7 @@ export function QuizModal({ doc, onClose, onQuizCompleted }: QuizModalProps) {
             type="button"
             onClick={onClose}
             aria-label="Close quiz"
-            className="p-2 text-[#76736c] hover:text-[#171614] rounded-lg hover:bg-[#e4e0d8]/50 transition-colors shrink-0 cursor-pointer"
+            className="btn-3d-secondary p-2 text-[#52504b] hover:text-[#171614] rounded-xl shrink-0 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -199,11 +199,11 @@ export function QuizModal({ doc, onClose, onQuizCompleted }: QuizModalProps) {
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-[#e4e0d8] bg-[#f7f6f2] flex items-center justify-end gap-3">
+        <div className="px-6 py-4 border-t border-[#dfd9cd] bg-gradient-to-b from-[#faf8f4] to-[#f2eee4] flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-[#52504b] bg-white border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] cursor-pointer"
+            className="btn-3d-secondary px-4 py-2 text-sm font-medium text-[#52504b] rounded-xl cursor-pointer"
           >
             Cufi
           </button>
@@ -212,7 +212,7 @@ export function QuizModal({ doc, onClose, onQuizCompleted }: QuizModalProps) {
               type="button"
               disabled={!allAnswered}
               onClick={handleSubmit}
-              className="px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="btn-3d-primary px-4 py-2 text-sm font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               Deebii Mirkaneessi
             </button>

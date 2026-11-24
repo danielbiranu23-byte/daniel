@@ -1,9 +1,9 @@
-import { BookOpen, LogOut, Menu, MessageSquarePlus, X } from 'lucide-react';
+import { LogOut, Menu, MessageSquarePlus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AuthUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type AppTab = 'dashboard' | 'bible' | 'chat' | 'library' | 'admin';
+export type AppTab = 'dashboard' | 'bible' | 'chat' | 'library' | 'notes' | 'admin';
 
 interface TopBarProps {
   user: AuthUser;
@@ -21,6 +21,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
     { id: 'bible', label: 'Macaafa Qulqulluu' },
     { id: 'chat', label: 'Chatbot' },
     { id: 'library', label: 'Barnootawwan' },
+    { id: 'notes', label: user.role === 'admin' ? 'Yaadannoo Admin' : 'Yaadannoo' },
     ...(user.role === 'admin' ? [{ id: 'admin' as AppTab, label: 'Admin Settings' }] : []),
   ];
 
@@ -30,24 +31,34 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/92 backdrop-blur-md border-b border-[#e4e0d8]">
+    <header className="sticky top-0 z-30 bg-[#ffffff]/96 border-b-2 border-[#d9d2c4] shadow-[0_6px_18px_-8px_rgba(20,45,76,0.16)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-        {/* Zone 1: Single-element brand wordmark */}
+        {/* Zone 1: Single-element 3D moving brand wordmark */}
         <button
           type="button"
           onClick={() => handleNav('dashboard')}
+          aria-label="Qajeelcha Macaafaa Qulqulluu"
           className="flex items-center gap-3 text-left whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#142d4c] rounded-lg cursor-pointer group"
         >
-          <span className="w-8 h-8 rounded-lg bg-[#142d4c] text-[#f5e7c6] flex items-center justify-center shadow-xs transition-transform duration-150 group-hover:scale-[1.03]">
-            <BookOpen className="w-4 h-4" aria-hidden="true" />
+          <span className="w-10 h-10 rounded-xl overflow-hidden bg-[#142d4c] border-2 border-[#d4a24c] border-b-3 shadow-[0_4px_10px_-2px_rgba(14,33,57,0.42)] transition-transform duration-150 group-hover:-translate-y-0.5 shrink-0">
+            <img
+              src="/assets/aistudio/image_27ab89bd.png"
+              alt="Qajeelcha Macaafaa Qulqulluu Logo"
+              className="w-full h-full object-cover object-top"
+            />
           </span>
-          <span className="font-editorial text-lg font-semibold tracking-tight text-[#171614]">
-            Qajeelcha Macaafaa
+          <span className="brand-3d-viewport w-[185px] sm:w-[245px] py-1 px-1.5 rounded-lg bg-gradient-to-b from-[#faf8f3] to-[#f1ede3] border border-[#e3dccf] shadow-inner">
+            <span className="brand-3d-marquee font-editorial text-base sm:text-lg font-extrabold text-3d-brand-sculpture">
+              <span>Qajeelcha Macaafaa Qulqulluu</span>
+              <span aria-hidden="true" className="text-[#9a6b16]">✦</span>
+              <span aria-hidden="true">Qajeelcha Macaafaa Qulqulluu</span>
+              <span aria-hidden="true" className="text-[#9a6b16]">✦</span>
+            </span>
           </span>
         </button>
 
         {/* Zone 2: Clean single-line navigation links */}
-        <nav className="hidden md:flex items-center gap-7" aria-label="Main navigation">
+        <nav className="hidden lg:flex items-center gap-5" aria-label="Main navigation">
           {navItems.map((item) => {
             const active = activeTab === item.id;
             return (
@@ -73,7 +84,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
           })}
         </nav>
 
-        {/* Zone 3: Primary action + account sign-out */}
+        {/* Zone 3: Primary 3D action + account sign-out */}
         <div className="flex items-center gap-2.5 shrink-0">
           <PWAInstallButton />
           <button
@@ -82,7 +93,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
               onNewChat();
               setMobileOpen(false);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#142d4c]"
+            className="btn-3d-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#142d4c]"
           >
             <MessageSquarePlus className="w-4 h-4 text-[#f5e7c6]" aria-hidden="true" />
             <span>Marii Haaraa</span>
@@ -92,7 +103,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
             type="button"
             onClick={onLogout}
             title={`${user.fullName} (@${user.username}) — Ba'i`}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#52504b] bg-[#f7f6f2] border border-[#e4e0d8] rounded-lg hover:bg-[#f2efe9] hover:text-[#171614] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="btn-3d-secondary hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#52504b] hover:text-[#171614] rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
           >
             <span className="max-w-[96px] truncate">{user.username}</span>
             <LogOut className="w-3.5 h-3.5 text-[#76736c]" aria-hidden="true" />
@@ -102,7 +113,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
             type="button"
             onClick={() => setMobileOpen((prev) => !prev)}
             aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            className="md:hidden p-2 text-[#52504b] hover:text-[#171614] rounded-lg border border-[#e4e0d8] bg-[#f7f6f2]"
+            className="btn-3d-secondary lg:hidden p-2 text-[#52504b] hover:text-[#171614] rounded-xl"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -111,7 +122,7 @@ export function TopBar({ user, activeTab, onSelectTab, onNewChat, onLogout }: To
 
       {/* Mobile navigation drawer */}
       {mobileOpen && (
-        <nav className="md:hidden border-t border-[#e4e0d8] bg-white px-4 py-3 flex flex-col gap-1">
+        <nav className="lg:hidden border-t border-[#e4e0d8] bg-white px-4 py-3 flex flex-col gap-1">
           {navItems.map((item) => {
             const active = activeTab === item.id;
             return (

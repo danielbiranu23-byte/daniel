@@ -144,12 +144,12 @@ export function ChatWorkspace({
       <div className="sanctuary-card rounded-2xl overflow-hidden flex h-[calc(100vh-8.5rem)] min-h-[540px]">
         {/* Left Sidebar (Chat History + Source Focus) */}
         {sidebarOpen && (
-          <aside className="w-72 border-r border-[#e4e0d8] bg-[#f7f6f2] flex flex-col shrink-0">
-            <div className="p-3.5 border-b border-[#e4e0d8]">
+          <aside className="w-72 border-r border-[#dfd9cd] bg-[#f7f5ef] flex flex-col shrink-0">
+            <div className="p-3.5 border-b border-[#dfd9cd]">
               <button
                 type="button"
                 onClick={() => onCreateNewChat(focusDocId)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium text-white bg-[#142d4c] rounded-lg hover:bg-[#0e2139] shadow-xs transition-colors cursor-pointer"
+                className="btn-3d-primary w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl cursor-pointer"
               >
                 <Plus className="w-4 h-4 text-[#f5d08a]" />
                 <span>Marii Haaraa</span>
@@ -157,8 +157,8 @@ export function ChatWorkspace({
             </div>
 
             {/* Study File Context Selector */}
-            <div className="p-3.5 border-b border-[#e4e0d8] space-y-2.5">
-              <div className="grid grid-cols-3 gap-1 p-0.5 bg-[#e9e5dc] rounded-lg">
+            <div className="p-3.5 border-b border-[#dfd9cd] space-y-2.5">
+              <div className="tray-3d grid grid-cols-3 gap-1 p-1 rounded-xl">
                 {(
                   [
                     { id: 'all', label: 'Hundaa' },
@@ -170,9 +170,9 @@ export function ChatWorkspace({
                     key={t.id}
                     type="button"
                     onClick={() => setScopeTestament(t.id)}
-                    className={`py-1 px-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`py-1 px-1 text-[11px] font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                       scopeTestament === t.id
-                        ? 'bg-white text-[#142d4c] shadow-xs'
+                        ? 'tab-3d-active text-[#142d4c] font-semibold'
                         : 'text-[#52504b] hover:text-[#171614]'
                     }`}
                   >
@@ -191,7 +191,7 @@ export function ChatWorkspace({
                 value={effectiveFocusDocId}
                 onChange={(e) => onChangeFocusDoc(e.target.value)}
                 disabled={streaming}
-                className="w-full px-2.5 py-2 text-xs bg-white border border-[#e4e0d8] rounded-lg text-[#171614] focus:outline-none focus:ring-2 focus:ring-[#142d4c]"
+                className="input-3d w-full px-2.5 py-2 text-xs rounded-xl text-[#171614] focus:outline-none"
               >
                 <option value="all">
                   Macaafa Qulqulluu &amp; Barnoota Hunda ({filteredScopeDocs.length})
@@ -257,24 +257,48 @@ export function ChatWorkspace({
                 })
               )}
             </div>
+
+            <div className="p-3 border-t border-[#dfd9cd] bg-[#f2efe6] text-[10.5px] text-[#52504b] space-y-1">
+              <div className="flex items-center gap-2">
+                <img
+                  src="/assets/aistudio/image_27ab89bd.png"
+                  alt="Qajeelcha Macaafaa Qulqulluu Logo"
+                  className="w-7 h-7 rounded-lg object-cover object-top border border-[#d4a24c] shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="font-semibold text-[#171614] truncate">Daniel Biranu</p>
+                  <p className="text-[10px] text-[#76736c] truncate">Bale, Oromia</p>
+                </div>
+              </div>
+              <p className="truncate">
+                <a href="mailto:danielbiranu.23@gmail.com" className="hover:text-[#142d4c]">
+                  danielbiranu.23@gmail.com
+                </a>{' '}
+                ·{' '}
+                <a href="tel:+251932387559" className="hover:text-[#142d4c]">
+                  +251932387559
+                </a>
+              </p>
+              <p className="text-[10px] text-[#76736c]">© 2026 Daniel Biranu. Mirgi hundi eegamaadha!</p>
+            </div>
           </aside>
         )}
 
         {/* Main Chat Viewport */}
         <div className="flex-1 flex flex-col min-w-0 bg-white">
           {/* Top toolbar */}
-          <div className="px-5 py-3.5 border-b border-[#e4e0d8] flex items-center justify-between gap-4 bg-white">
+          <div className="px-5 py-3.5 border-b border-[#dfd9cd] flex items-center justify-between gap-4 bg-gradient-to-b from-[#ffffff] to-[#faf8f4]">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
                 onClick={() => setSidebarOpen((prev) => !prev)}
                 aria-label="Toggle chat sidebar"
-                className="p-1.5 text-[#52504b] hover:text-[#171614] rounded-lg hover:bg-[#f7f6f2] cursor-pointer"
+                className="btn-3d-secondary p-1.5 text-[#52504b] hover:text-[#171614] rounded-lg cursor-pointer"
               >
                 <PanelLeft className="w-4 h-4" />
               </button>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#171614] truncate">
+                <p className="text-sm font-bold text-[#171614] text-3d-subtle truncate">
                   {activeThread ? activeThread.title : settings.tutorName}
                 </p>
                 <p className="text-xs text-[#76736c] truncate">
@@ -291,10 +315,10 @@ export function ChatWorkspace({
             {displayedMessages.length === 0 && !optimisticUserMsg && (
               <div className="max-w-2xl mx-auto py-8 space-y-8">
                 <div className="space-y-3 text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-[#142d4c] text-[#f5d08a] flex items-center justify-center mx-auto shadow-xs">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-b from-[#1e4370] to-[#112742] border border-[#0e2139] border-b-3 text-[#f5d08a] flex items-center justify-center mx-auto shadow-md">
                     <BookOpen className="w-5 h-5" />
                   </div>
-                  <h2 className="font-editorial text-2xl font-semibold text-[#171614]">
+                  <h2 className="font-editorial text-2xl sm:text-3xl font-bold text-[#171614] text-3d-display">
                     {settings.tutorName}
                   </h2>
                   <p className="text-sm text-[#52504b] leading-relaxed max-w-lg mx-auto">
@@ -302,13 +326,13 @@ export function ChatWorkspace({
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   {STARTER_PROMPTS.map((prompt, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => sendMessage(prompt)}
-                      className="text-left p-4 rounded-xl border border-[#e4e0d8] bg-[#f7f6f2] hover:border-[#142d4c]/40 hover:bg-white hover:shadow-xs transition-all text-xs sm:text-sm text-[#171614] leading-relaxed cursor-pointer"
+                      className="sanctuary-card-3d text-left p-4 rounded-xl text-xs sm:text-sm text-[#171614] leading-relaxed cursor-pointer"
                     >
                       {prompt}
                     </button>
@@ -324,7 +348,7 @@ export function ChatWorkspace({
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role === 'user' ? (
-                    <div className="max-w-[85%] bg-[#142d4c] text-white px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed whitespace-pre-wrap shadow-xs">
+                    <div className="bubble-3d-user max-w-[85%] text-white px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed whitespace-pre-wrap">
                       {msg.content}
                     </div>
                   ) : (
@@ -350,7 +374,7 @@ export function ChatWorkspace({
                         </button>
                       </div>
 
-                      <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-2xl px-5 py-4 prose prose-sm prose-zinc max-w-none prose-headings:font-editorial prose-headings:text-[#171614] prose-p:leading-relaxed prose-blockquote:bg-white prose-blockquote:border prose-blockquote:border-[#e4e0d8] prose-blockquote:rounded-xl prose-blockquote:py-2 prose-blockquote:px-3.5 prose-blockquote:not-italic">
+                      <div className="bubble-3d-assistant rounded-2xl px-5 py-4 prose prose-sm prose-zinc max-w-none prose-headings:font-editorial prose-headings:text-[#171614] prose-p:leading-relaxed prose-blockquote:bg-white prose-blockquote:border prose-blockquote:border-[#e4e0d8] prose-blockquote:rounded-xl prose-blockquote:py-2 prose-blockquote:px-3.5 prose-blockquote:not-italic">
                         <ChatbotMessageContent
                           content={msg.content}
                           onOpenBibleRef={onOpenBibleRef}
@@ -367,7 +391,7 @@ export function ChatWorkspace({
                   (m) => m.content === optimisticUserMsg.content && m.id === optimisticUserMsg.id
                 ) && (
                   <div className="flex justify-end">
-                    <div className="max-w-[85%] bg-[#142d4c] text-white px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed whitespace-pre-wrap shadow-xs">
+                    <div className="bubble-3d-user max-w-[85%] text-white px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed whitespace-pre-wrap">
                       {optimisticUserMsg.content}
                     </div>
                   </div>
@@ -380,7 +404,7 @@ export function ChatWorkspace({
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-[#142d4c]" />
                     <span className="font-medium text-[#142d4c]">{settings.tutorName} barreessaa jira...</span>
                   </div>
-                  <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-2xl px-5 py-4 prose prose-sm prose-zinc max-w-none">
+                  <div className="bubble-3d-assistant rounded-2xl px-5 py-4 prose prose-sm prose-zinc max-w-none">
                     {streamingText ? (
                       <ChatbotMessageContent
                         content={streamingText}
@@ -395,7 +419,7 @@ export function ChatWorkspace({
 
               {error && (
                 <div className="w-full space-y-2">
-                  <div className="bg-[#f7f6f2] border border-[#e4e0d8] rounded-2xl px-5 py-4 text-sm text-[#171614] leading-relaxed">
+                  <div className="bubble-3d-assistant rounded-2xl px-5 py-4 text-sm text-[#171614] leading-relaxed">
                     {error}
                   </div>
                 </div>
@@ -406,7 +430,7 @@ export function ChatWorkspace({
           </div>
 
           {/* Composer */}
-          <div className="p-4 border-t border-[#e4e0d8] bg-[#f7f6f2]">
+          <div className="p-4 border-t border-[#dfd9cd] bg-[#f7f5ef]">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -414,7 +438,7 @@ export function ChatWorkspace({
               }}
               className="max-w-3xl mx-auto"
             >
-              <div className="flex items-end gap-2 bg-white border border-[#e4e0d8] rounded-xl p-2 shadow-2xs focus-within:ring-2 focus-within:ring-[#142d4c] focus-within:border-[#142d4c]">
+              <div className="input-3d flex items-end gap-2 rounded-xl p-2 focus-within:ring-2 focus-within:ring-[#142d4c]">
                 <textarea
                   rows={1}
                   value={input}
@@ -428,7 +452,7 @@ export function ChatWorkspace({
                   type="submit"
                   disabled={streaming || !input.trim()}
                   aria-label="Send message"
-                  className="p-2.5 rounded-lg bg-[#142d4c] text-white hover:bg-[#0e2139] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
+                  className="btn-3d-primary p-2.5 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer"
                 >
                   {streaming ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
