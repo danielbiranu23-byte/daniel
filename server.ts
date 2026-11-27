@@ -2945,7 +2945,7 @@ const upload = multer({
     },
   }),
   limits: {
-    fileSize: 30 * 1024 * 1024,
+    fileSize: 2 * 1024 * 1024,
   },
 });
 
@@ -3777,7 +3777,7 @@ export async function createApp(httpServer?: http.Server): Promise<express.Expre
         if (err) {
           const msg =
             err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
-              ? 'Faayilli garmalee guddaa dha (daangaan 30MB dha).'
+              ? 'Faayilli garmalee guddaa dha (daangaan 2MB dha).'
               : err instanceof Error
                 ? err.message
                 : 'Faayila qajeelfamaa ol-kaa’uun hin danda’amne.';

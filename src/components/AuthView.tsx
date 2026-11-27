@@ -94,7 +94,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
       } else if (code === 'auth/unauthorized-domain' || code === 'auth/popup-blocked') {
         setPopupNotice(
           roleTab === 'admin'
-            ? 'Browseriin kee popup Google cufeera (ykn domain hin hayyamamne). Rakkoo tokko malee gadi bu’iitii Email Admin (danielbiranu.23@gmail.com) fi Password dhaan Kutaa Admin seeni.'
+            ? 'Browseriin kee popup Google cufeera. Rakkoo tokko malee gadi bu’iitii Email Admin fi Password dhaan Kutaa Admin seeni.'
             : 'Browseriin kee popup Google cufeera. Rakkoo tokko malee gadi bu’iitii Email fi Password keetiin Kutaa Barataa seeni (ykn "Galmaa’i" tuquun Email haaraa uumi).'
         );
         setTimeout(() => usernameInputRef.current?.focus(), 60);
@@ -386,7 +386,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
             <p className="text-sm text-[#52504b] leading-relaxed">
               {mode === 'login' &&
                 (roleTab === 'admin'
-                  ? 'Email Admin (danielbiranu.23@gmail.com) ykn Username fi Password galchuun Kutaa Admin seeni.'
+                  ? 'Password Admin fi Username galchuun Kutaa Admin seeni.'
                   : 'Email keessan fi Password galchuun kallattiin Kutaa Barataa seeni. Yoo email haaraa ta’e ofumaan si galmeessa.')}
               {mode === 'register' &&
                 'Maqaa guutuu, Email keessan, fi Password galchuun kallattiin Kutaa Barataa seeni.'}
@@ -518,7 +518,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                   mode === 'register'
                     ? 'Duwwaa dhiisuu dandeessa (email irraa uuma)'
                     : roleTab === 'admin'
-                      ? 'danielbiranu.23@gmail.com ykn admin'
+                      ? 'fkn: admin@gmail.com ykn admin'
                       : 'fkn: maqaa@gmail.com'
                 }
                 className="input-3d w-full px-3.5 py-2.5 text-sm rounded-xl focus:outline-none"
